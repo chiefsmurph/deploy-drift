@@ -1,0 +1,40 @@
+{
+  "name": "deploy-drift",
+  "version": "0.1.0",
+  "description": "Find servers that drifted from GitHub: stale deploys, hand edits, uncommitted files, and code that exists only on the box.",
+  "type": "module",
+  "bin": {
+    "deploy-drift": "dist/src/cli.js"
+  },
+  "files": [
+    "dist/src",
+    "examples",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "rm -rf dist && tsc -p .",
+    "typecheck": "tsc -p . --noEmit",
+    "test": "npm run build && node --test \"dist/test/*.test.js\""
+  },
+  "keywords": [
+    "drift",
+    "deploy",
+    "devops",
+    "ssh",
+    "git",
+    "audit",
+    "server"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "ignore": "^7.0.12"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "typescript": "^5.9.3"
+  }
+}

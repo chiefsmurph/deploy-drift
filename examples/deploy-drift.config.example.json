@@ -1,0 +1,63 @@
+{
+  "github": { "owner": "your-github-user" },
+
+  "hosts": {
+    "web": { "ssh": "web-1" },
+    "worker": { "ssh": "deploy@203.0.113.10", "sshArgs": ["-p", "2222"] }
+  },
+
+  "defaults": {
+    "exclude": [".git", "node_modules"],
+    "ignore": ["package-lock.json", "yarn.lock"]
+  },
+
+  "targets": [
+    {
+      "name": "api (git checkout)",
+      "type": "git",
+      "host": "web",
+      "path": "/srv/api",
+      "repo": "api"
+    },
+    {
+      "name": "site (rsync copy)",
+      "type": "files",
+      "host": "web",
+      "path": "/var/www/site",
+      "repo": "site",
+      "subdir": "public",
+      "exclude": ["uploads"],
+      "ignore": ["robots.txt"]
+    },
+    {
+      "name": "worker build",
+      "type": "stamp",
+      "host": "worker",
+      "path": "/opt/worker/build/version.json",
+      "field": "sha",
+      "repo": "worker"
+    },
+    {
+      "name": "worker is running",
+      "type": "command",
+      "host": "worker",
+      "run": "systemctl is-active worker",
+      "expect": "^active$"
+    },
+    {
+      "name": "my laptop: api",
+      "type": "git",
+      "path": "~/code/api",
+      "repo": "api"
+    }
+  ],
+
+  "discover": [
+    { "host": "web", "roots": ["/srv"], "maxDepth": 2 }
+  ],
+
+  "githubRepos": {
+    "repos": ["api", "site", "worker"],
+    "ignoreBranches": ["dependabot/*", "archive/*"]
+  }
+}
