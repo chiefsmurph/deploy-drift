@@ -82,7 +82,7 @@ async function main(): Promise<number> {
     return 0;
   }
   const config = await loadConfig(args.config);
-  const token = findToken();
+  const token = findToken(config.github?.apiUrl);
   if (!token) console.error("warning: no GitHub token (set GITHUB_TOKEN or run `gh auth login`); private repos will fail");
   const gh = new GithubApi(token, config.github?.apiUrl);
   const tasks = buildTasks({ config, gh }, args.only);
@@ -96,10 +96,12 @@ async function main(): Promise<number> {
 }
 
 main().then(
-  (code) => process.exit(code),
+  (code) => {
+    process.exitCode = code; // not process.exit(): that can cut off a large piped report
+  },
   (e) => {
     console.error(e instanceof ConfigError ? e.message : `deploy-drift: ${(e as Error).stack ?? e}`);
-    process.exit(2);
+    process.exitCode = 2;
   },
 );
 

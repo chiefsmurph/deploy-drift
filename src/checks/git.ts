@@ -1,7 +1,7 @@
 import { short } from "../blob.js";
 import type { GitTarget } from "../config.js";
-import { execError, runScript } from "../exec.js";
-import { gitStateScript, parseGitState } from "../remote.js";
+import { runScript } from "../exec.js";
+import { gitStateScript, parseGitState, probeLines } from "../remote.js";
 import type { Finding } from "../types.js";
 import { capped, hostOf, slug, type Context } from "./context.js";
 import { relationFinding } from "./relation.js";
@@ -14,10 +14,13 @@ export interface Outcome {
 export async function checkGit(ctx: Context, t: GitTarget): Promise<Outcome> {
   const repo = slug(ctx, t.repo);
   const [r, want] = await Promise.all([runScript(hostOf(ctx, t.host), gitStateScript(t.path)), ctx.gh.resolve(repo, t.ref)]);
-  if (r.code !== 0 && !r.stdout) throw new Error(`could not inspect ${t.path}: ${execError(r)}`);
-  const s = parseGitState(r.stdout);
+  const s = parseGitState(probeLines(r, `inspecting ${t.path}`));
   if (s.error === "missing") return { summary: `${t.path} does not exist`, findings: [{ severity: "drift", message: `${t.path} does not exist` }] };
   if (s.error === "notgit") return { summary: `${t.path} is not a git checkout`, findings: [{ severity: "drift", message: `${t.path} is not a git checkout` }] };
+  if (s.error === "nogit") throw new Error(`git is not installed on the host`);
+  if (s.error === "ownership") throw new Error(`git refuses ${t.path} ("dubious ownership"): connect as the user that owns the checkout`);
+  if (s.error) throw new Error(`git status failed in ${t.path}`);
+  if (!s.head) return { summary: `no commit checked out in ${t.path}`, findings: [{ severity: "drift", message: `no commit checked out (empty repo or unborn branch)` }] };
 
   const findings: Finding[] = [];
   const rel = await relationFinding(ctx.gh, repo, want, s.head);

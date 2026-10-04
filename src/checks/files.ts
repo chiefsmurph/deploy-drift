@@ -1,13 +1,14 @@
 import ignore from "ignore";
 import { gitBlobSha, short } from "../blob.js";
 import type { FilesTarget } from "../config.js";
-import { execError, runScript } from "../exec.js";
+import { runScript } from "../exec.js";
 import type { Github, TreeEntry } from "../github.js";
-import { hashScript, parseHashed } from "../remote.js";
+import { hashScript, parseHashed, probeLines } from "../remote.js";
 import type { Finding } from "../types.js";
 import { capped, hostOf, slug, type Context } from "./context.js";
 import type { Outcome } from "./git.js";
 
+/** Always excluded, on top of anything configured. */
 export const DEFAULT_EXCLUDE = [".git", "node_modules"];
 const MAX_GITIGNORES = 50;
 
@@ -20,51 +21,58 @@ export function isExcluded(rel: string, exclude: string[]): boolean {
 }
 
 /**
- * True when the repo's own .gitignore files ignore `rel` (relative to the compared subdir):
- * such files are expected on a server (.env, data/, logs) and are not drift.
+ * True when the repo's own .gitignore files ignore `rel` (relative to the compared subdir): such files are
+ * expected on a server (.env, data/, logs) and are not drift. As in git, the deepest .gitignore that has an
+ * opinion (ignore or `!` re-include) wins.
  */
-async function repoIgnoreMatcher(gh: Github, repo: string, entries: TreeEntry[], prefix: string): Promise<(rel: string) => boolean> {
-  const relevant = entries
+async function repoIgnoreMatcher(gh: Github, repo: string, entries: TreeEntry[], prefix: string) {
+  const all = entries
     .filter((e) => e.type === "blob" && (e.path === ".gitignore" || e.path.endsWith("/.gitignore")))
     .map((e) => ({ dir: e.path.slice(0, -".gitignore".length), sha: e.sha }))
     .filter(({ dir }) => prefix.startsWith(dir) || dir.startsWith(prefix))
-    .slice(0, MAX_GITIGNORES);
+    .sort((a, b) => b.dir.length - a.dir.length);
+  const used = all.slice(0, MAX_GITIGNORES);
   const matchers = await Promise.all(
-    relevant.map(async ({ dir, sha }) => ({ dir, ig: ignore().add((await gh.blob(repo, sha)).toString("utf8")) })),
+    used.map(async ({ dir, sha }) => ({ dir, ig: ignore().add((await gh.blob(repo, sha)).toString("utf8")) })),
   );
-  return (rel) => {
+  const ignored = (rel: string) => {
     const full = prefix + rel;
-    return matchers.some(({ dir, ig }) => {
-      if (!full.startsWith(dir)) return false;
-      const sub = full.slice(dir.length);
-      return sub !== "" && ig.ignores(sub);
-    });
+    for (const { dir, ig } of matchers) {
+      if (!full.startsWith(dir)) continue;
+      const verdict = ig.test(full.slice(dir.length));
+      if (verdict.ignored) return true;
+      if (verdict.unignored) return false;
+    }
+    return false;
   };
+  return { ignored, skipped: all.length - used.length };
 }
 
 export async function checkFiles(ctx: Context, t: FilesTarget): Promise<Outcome> {
   const repo = slug(ctx, t.repo);
-  const exclude = [...new Set([...(ctx.config.defaults?.exclude ?? DEFAULT_EXCLUDE), ...(t.exclude ?? [])])];
+  const exclude = [...new Set([...DEFAULT_EXCLUDE, ...(ctx.config.defaults?.exclude ?? []), ...(t.exclude ?? [])])];
   const userIgnore = ignore().add([...(ctx.config.defaults?.ignore ?? []), ...(t.ignore ?? [])]);
   const want = await ctx.gh.resolve(repo, t.ref);
   const [{ entries, truncated }, r] = await Promise.all([
     ctx.gh.tree(repo, want.treeSha),
     runScript(hostOf(ctx, t.host), hashScript(t.path, exclude), 600_000),
   ]);
-  if (r.code !== 0 && !r.stdout) throw new Error(`could not read ${t.path}: ${execError(r)}`);
-  const box = parseHashed(r.stdout);
+  const box = parseHashed(probeLines(r, `hashing ${t.path}`));
   if (box.error === "missing") return { summary: `${t.path} does not exist`, findings: [{ severity: "drift", message: `${t.path} does not exist` }] };
   if (box.error === "nohash") throw new Error(`host has neither git nor python3 to hash files`);
   if (box.error) throw new Error(`hashing files failed on the host (${box.error})`);
 
   const prefix = t.subdir ? t.subdir.replace(/^\/+|\/+$/g, "") + "/" : "";
   const expected = new Map<string, TreeEntry>();
+  const submodules: string[] = [];
   for (const e of entries) {
-    if (e.type !== "blob" || !e.path.startsWith(prefix)) continue;
+    if (!e.path.startsWith(prefix)) continue;
     const rel = e.path.slice(prefix.length);
-    if (!isExcluded(rel, exclude)) expected.set(rel, e);
+    if (e.type === "commit") submodules.push(rel);
+    else if (e.type === "blob" && !isExcluded(rel, exclude)) expected.set(rel, e);
   }
-  const repoIgnored = await repoIgnoreMatcher(ctx.gh, repo, entries, prefix);
+  const inSubmodule = (rel: string) => submodules.some((s) => rel === s || rel.startsWith(s + "/"));
+  const repoIgnore = await repoIgnoreMatcher(ctx.gh, repo, entries, prefix);
 
   const differ: string[] = [];
   const missing: string[] = [];
@@ -85,20 +93,23 @@ export async function checkFiles(ctx: Context, t: FilesTarget): Promise<Outcome>
     else same++;
   }
   const extra = [...box.files.keys(), ...box.links.keys()]
-    .filter((rel) => !expected.has(rel) && !userIgnore.ignores(rel) && !repoIgnored(rel))
+    .filter((rel) => !expected.has(rel) && !inSubmodule(rel) && !userIgnore.ignores(rel) && !repoIgnore.ignored(rel))
     .sort();
 
   const findings: Finding[] = [];
   const label = `${want.ref} ${short(want.sha)}`;
   if (differ.length) findings.push({ severity: "drift", message: `${differ.length} file${differ.length === 1 ? " differs" : "s differ"} from ${label}`, items: capped(differ.sort()) });
-  if (missing.length) findings.push({ severity: "drift", message: `${missing.length} file${missing.length === 1 ? " is" : "s are"} in the repo but missing here`, items: capped(missing.sort()) });
-  if (extra.length) findings.push({ severity: "drift", message: `${extra.length} file${extra.length === 1 ? " exists" : "s exist"} only here (not in the repo, not gitignored)`, items: capped(extra) });
+  if (truncated) {
+    // GitHub cut the file list short: "missing"/"only here" can't be trusted, only content mismatches can.
+    findings.push({ severity: "info", message: "GitHub truncated the repo's file list (very large repo): only changed files were checked, not missing or extra ones" });
+  } else {
+    if (missing.length) findings.push({ severity: "drift", message: `${missing.length} file${missing.length === 1 ? " is" : "s are"} in the repo but missing here`, items: capped(missing.sort()) });
+    if (extra.length) findings.push({ severity: "drift", message: `${extra.length} file${extra.length === 1 ? " exists" : "s exist"} only here (not in the repo, not gitignored)`, items: capped(extra) });
+  }
   if (box.unreadable.length) findings.push({ severity: "info", message: `${box.unreadable.length} unreadable file(s) skipped`, items: capped(box.unreadable.sort()) });
-  if (truncated) findings.push({ severity: "info", message: "GitHub truncated the file list (very large repo); the comparison may be incomplete" });
+  if (repoIgnore.skipped) findings.push({ severity: "info", message: `${repoIgnore.skipped} .gitignore file(s) beyond the first ${MAX_GITIGNORES} were not applied` });
 
-  const parts = [differ.length && `${differ.length} differ`, missing.length && `${missing.length} missing`, extra.length && `${extra.length} only here`].filter(Boolean);
-  return {
-    summary: parts.length ? `${parts.join(", ")} vs ${repo}${prefix ? "/" + prefix.slice(0, -1) : ""} @ ${label}` : `${same} files match ${repo}${prefix ? "/" + prefix.slice(0, -1) : ""} @ ${label}`,
-    findings,
-  };
+  const where = `${repo}${prefix ? "/" + prefix.slice(0, -1) : ""} @ ${label}`;
+  const counted = [differ.length && `${differ.length} differ`, !truncated && missing.length && `${missing.length} missing`, !truncated && extra.length && `${extra.length} only here`].filter(Boolean);
+  return { summary: counted.length ? `${counted.join(", ")} vs ${where}` : `${same} files match ${where}`, findings };
 }

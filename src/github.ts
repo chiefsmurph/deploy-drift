@@ -40,12 +40,13 @@ export class GithubError extends Error {
   }
 }
 
-/** GITHUB_TOKEN / GH_TOKEN, else the GitHub CLI's login, else anonymous (public repos only). */
-export function findToken(): string | undefined {
+/** GITHUB_TOKEN / GH_TOKEN, else the GitHub CLI's login for that host, else anonymous (public repos only). */
+export function findToken(apiUrl = "https://api.github.com"): string | undefined {
   const env = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
   if (env) return env;
+  const host = new URL(apiUrl).hostname.replace(/^api\./, "");
   try {
-    return execFileSync("gh", ["auth", "token"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim() || undefined;
+    return execFileSync("gh", ["auth", "token", "--hostname", host], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim() || undefined;
   } catch {
     return undefined;
   }
@@ -103,14 +104,14 @@ export class GithubApi implements Github {
     return this.memo(`resolve:${repo}:${ref ?? ""}`, async () => {
       const name = ref ?? (await this.defaultBranch(repo));
       const { json } = await this.request(`/repos/${repo}/commits/${encodeURIComponent(name)}`);
-      let kind: Resolved["kind"] = /^[0-9a-f]{7,40}$/.test(name) ? "sha" : "tag";
-      if (kind !== "sha") {
-        try {
-          await this.request(`/repos/${repo}/branches/${encodeURIComponent(name)}`);
-          kind = "branch";
-        } catch (e) {
-          if (!(e instanceof GithubError && e.status === 404)) throw e;
-        }
+      // Check for a branch first: a branch can be named like a SHA (e.g. "20261004").
+      let kind: Resolved["kind"];
+      try {
+        await this.request(`/repos/${repo}/branches/${encodeURIComponent(name)}`);
+        kind = "branch";
+      } catch (e) {
+        if (!(e instanceof GithubError && e.status === 404)) throw e;
+        kind = /^[0-9a-f]{7,40}$/.test(name) && json.sha.startsWith(name) ? "sha" : "tag";
       }
       return { sha: json.sha, treeSha: json.commit.tree.sha, ref: name, kind };
     });

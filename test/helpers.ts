@@ -13,6 +13,8 @@ export interface FakeRepo {
   kind?: Resolved["kind"];
   files?: Record<string, string>;
   links?: Record<string, string>;
+  /** paths that are git submodules (tree entries of type "commit") */
+  submodules?: string[];
   /** head sha -> comparison against `sha`; missing = not on GitHub */
   compare?: Record<string, Comparison>;
   /** extra commit SHAs that exist on GitHub */
@@ -37,6 +39,7 @@ export class FakeGithub implements Github {
     const entries: TreeEntry[] = [
       ...Object.entries(r.files ?? {}).map(([path, c]) => ({ path, mode: "100644", type: "blob" as const, sha: gitBlobSha(c) })),
       ...Object.entries(r.links ?? {}).map(([path, t]) => ({ path, mode: "120000", type: "blob" as const, sha: gitBlobSha(t) })),
+      ...(r.submodules ?? []).map((path) => ({ path, mode: "160000", type: "commit" as const, sha: "c".repeat(40) })),
     ];
     return { entries, truncated: false };
   }

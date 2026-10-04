@@ -25,6 +25,8 @@ export function runScript(host: HostConfig, script: string, timeoutMs = 120_000)
       timedOut = true;
       child.kill("SIGKILL");
     }, timeoutMs);
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
     child.stdout.on("data", (d) => (stdout += d));
     child.stderr.on("data", (d) => (stderr += d));
     child.on("error", (e) => {

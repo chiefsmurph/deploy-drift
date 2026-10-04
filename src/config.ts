@@ -149,6 +149,7 @@ export function validate(raw: unknown): Config {
   for (const [i, d] of (c.discover ?? []).entries()) {
     if (!c.hosts[d.host]) errors.push(`discover[${i}]: unknown host "${d.host}"`);
     if (!Array.isArray(d.roots) || d.roots.length === 0) errors.push(`discover[${i}]: "roots" must be a non-empty array`);
+    if (d.maxDepth !== undefined && !(Number.isInteger(d.maxDepth) && d.maxDepth >= 1 && d.maxDepth <= 20)) errors.push(`discover[${i}]: "maxDepth" must be an integer 1-20`);
   }
   if (c.githubRepos && !Array.isArray(c.githubRepos.repos)) errors.push("githubRepos.repos must be an array");
 

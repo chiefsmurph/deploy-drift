@@ -1,7 +1,7 @@
 import { short } from "../blob.js";
 import type { StampTarget } from "../config.js";
-import { execError, runScript } from "../exec.js";
-import { catScript } from "../remote.js";
+import { runScript } from "../exec.js";
+import { catScript, parseCat, probeLines } from "../remote.js";
 import { hostOf, slug, type Context } from "./context.js";
 import type { Outcome } from "./git.js";
 import { relationFinding } from "./relation.js";
@@ -24,9 +24,9 @@ export function readStamp(content: string, t: Pick<StampTarget, "field" | "patte
 export async function checkStamp(ctx: Context, t: StampTarget): Promise<Outcome> {
   const repo = slug(ctx, t.repo);
   const [r, want] = await Promise.all([runScript(hostOf(ctx, t.host), catScript(t.path)), ctx.gh.resolve(repo, t.ref)]);
-  if (r.code !== 0 && !r.stdout) throw new Error(`could not read ${t.path}: ${execError(r)}`);
-  if (r.stdout.startsWith("ERR missing")) return { summary: `${t.path} does not exist`, findings: [{ severity: "drift", message: `stamp ${t.path} does not exist` }] };
-  const sha = readStamp(r.stdout.replace(/^OK\n/, ""), t);
+  const cat = parseCat(probeLines(r, `reading ${t.path}`));
+  if (cat.missing) return { summary: `${t.path} does not exist`, findings: [{ severity: "drift", message: `stamp ${t.path} does not exist` }] };
+  const sha = readStamp(cat.content, t);
   if (!sha || !/^[0-9a-f]{7,40}$/i.test(sha)) {
     return { summary: `no commit SHA found in ${t.path}`, findings: [{ severity: "drift", message: `no commit SHA found in ${t.path}` }] };
   }

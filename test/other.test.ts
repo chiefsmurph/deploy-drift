@@ -62,6 +62,20 @@ test("discover finds checkouts no target covers", async () => {
   assert.deepEqual(r.findings[0].items, [join(root, "stray")]);
 });
 
+test("discover expands ~ with the host's own home", async () => {
+  const home = tempDir();
+  for (const d of ["code/known", "code/stray"]) mkdirSync(join(home, d, ".git"), { recursive: true });
+  const saved = process.env.HOME;
+  process.env.HOME = home; // the probe's sh inherits this, standing in for a remote user's home
+  try {
+    const t = { name: "k", type: "git" as const, path: "~/code/known", repo: "k" };
+    const r = await checkDiscover(ctxWith(new FakeGithub({}), [t]), { host: "local", roots: ["~/code"], maxDepth: 2 });
+    assert.deepEqual(r.findings[0].items, [join(home, "code/stray")]);
+  } finally {
+    process.env.HOME = saved;
+  }
+});
+
 test("github repo hygiene is info, never drift", async () => {
   const gh = new FakeGithub({
     "o/api": {
@@ -96,11 +110,12 @@ test("config validation reports every problem", () => {
 });
 
 test("parsers", () => {
-  const g = parseGitState(`HEAD ${SHA}\nBRANCH main\nSTASH 2\nWORKTREES 3\nDIRTYCOUNT 1\nDIRTY  M a.txt\nLB ${SHA} main\nLB ${SHA} feat/x y`);
+  const g = parseGitState(`HEAD ${SHA}\nBRANCH refs/heads/main\nSTASH 2\nWORKTREES 3\nDIRTYCOUNT 1\nDIRTY  M a.txt\nLB ${SHA} main\nLB ${SHA} feat/x y\nEND`.split("\n"));
+  assert.equal(g.branch, "main");
   assert.equal(g.worktrees, 2);
   assert.deepEqual(g.dirty, [" M a.txt"]);
   assert.deepEqual(g.branches[1], { sha: SHA, name: "feat/x y" });
-  const h = parseHashed(`F\t${SHA}\tdir/a b.txt\nL\ttarget\tcur\nU\tsecret\n`);
+  const h = parseHashed(`F\t${SHA}\tdir/a b.txt\nL\ttarget\tcur\nU\tsecret\nEND`.split("\n"));
   assert.equal(h.files.get("dir/a b.txt"), SHA);
   assert.equal(h.links.get("cur"), "target");
   assert.deepEqual(h.unreadable, ["secret"]);

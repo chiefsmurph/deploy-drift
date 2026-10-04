@@ -2,6 +2,15 @@
   "name": "deploy-drift",
   "version": "0.1.0",
   "description": "Find servers that drifted from GitHub: stale deploys, hand edits, uncommitted files, and code that exists only on the box.",
+  "author": "John Murphy (https://github.com/chiefsmurph)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chiefsmurph/deploy-drift.git"
+  },
+  "homepage": "https://github.com/chiefsmurph/deploy-drift#readme",
+  "bugs": {
+    "url": "https://github.com/chiefsmurph/deploy-drift/issues"
+  },
   "type": "module",
   "bin": {
     "deploy-drift": "dist/src/cli.js"
@@ -18,7 +27,8 @@
   "scripts": {
     "build": "rm -rf dist && tsc -p .",
     "typecheck": "tsc -p . --noEmit",
-    "test": "npm run build && node --test \"dist/test/*.test.js\""
+    "test": "npm run build && node --test dist/test/*.test.js",
+    "prepublishOnly": "npm test"
   },
   "keywords": [
     "drift",
@@ -26,8 +36,12 @@
     "devops",
     "ssh",
     "git",
+    "github",
     "audit",
-    "server"
+    "server",
+    "vps",
+    "rsync",
+    "file-integrity"
   ],
   "license": "MIT",
   "dependencies": {
