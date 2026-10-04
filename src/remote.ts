@@ -38,6 +38,7 @@ echo "STASH $(G stash list 2>/dev/null | wc -l | tr -d ' ')"
 top=$(G rev-parse --show-toplevel 2>/dev/null)
 G worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p' | while IFS= read -r w; do
   [ "$w" = "$top" ] && continue
+  case "$w" in */.git/*) continue ;; esac   # a submodule lists its gitdir (.git/modules/x) as a worktree
   if [ -d "$w" ]; then
     printf 'WT %s\t%s\n' "$(GIT_OPTIONAL_LOCKS=0 git -c core.fsmonitor=false -C "$w" status --porcelain 2>/dev/null | wc -l | tr -d ' ')" "$w"
   else
