@@ -70,7 +70,7 @@ test("discover expands ~ with the host's own home", async () => {
   try {
     const t = { name: "k", type: "git" as const, path: "~/code/known", repo: "k" };
     const r = await checkDiscover(ctxWith(new FakeGithub({}), [t]), { host: "local", roots: ["~/code"], maxDepth: 2 });
-    assert.deepEqual(r.findings[0].items, [join(home, "code/stray")]);
+    assert.deepEqual(r.findings[0].items, ["~/code/stray"]); // reports show the host's home as ~
   } finally {
     process.env.HOME = saved;
   }
@@ -110,9 +110,9 @@ test("config validation reports every problem", () => {
 });
 
 test("parsers", () => {
-  const g = parseGitState(`HEAD ${SHA}\nBRANCH refs/heads/main\nSTASH 2\nWORKTREES 3\nDIRTYCOUNT 1\nDIRTY  M a.txt\nLB ${SHA} main\nLB ${SHA} feat/x y\nEND`.split("\n"));
+  const g = parseGitState(`HEAD ${SHA}\nBRANCH refs/heads/main\nSTASH 2\nWT 0\t/w/one\nWT missing\t/w/two\nDIRTYCOUNT 1\nDIRTY  M a.txt\nLB ${SHA} main\nLB ${SHA} feat/x y\nEND`.split("\n"));
   assert.equal(g.branch, "main");
-  assert.equal(g.worktrees, 2);
+  assert.deepEqual(g.worktrees, [{ path: "/w/one", dirty: 0 }, { path: "/w/two", dirty: "missing" }]);
   assert.deepEqual(g.dirty, [" M a.txt"]);
   assert.deepEqual(g.branches[1], { sha: SHA, name: "feat/x y" });
   const h = parseHashed(`F\t${SHA}\tdir/a b.txt\nL\ttarget\tcur\nU\tsecret\nEND`.split("\n"));

@@ -35,7 +35,15 @@ out=$(G rev-parse --git-dir 2>&1) || {
 echo "HEAD $(G rev-parse --verify -q HEAD 2>/dev/null)"
 echo "BRANCH $(G symbolic-ref -q HEAD 2>/dev/null)"
 echo "STASH $(G stash list 2>/dev/null | wc -l | tr -d ' ')"
-echo "WORKTREES $(G worktree list 2>/dev/null | wc -l | tr -d ' ')"
+top=$(G rev-parse --show-toplevel 2>/dev/null)
+G worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p' | while IFS= read -r w; do
+  [ "$w" = "$top" ] && continue
+  if [ -d "$w" ]; then
+    printf 'WT %s\t%s\n' "$(GIT_OPTIONAL_LOCKS=0 git -c core.fsmonitor=false -C "$w" status --porcelain 2>/dev/null | wc -l | tr -d ' ')" "$w"
+  else
+    printf 'WT missing\t%s\n' "$w"
+  fi
+done
 st=$(G status --porcelain 2>/dev/null) || { echo "ERR status"; exit 0; }
 if [ -n "$st" ]; then
   echo "DIRTYCOUNT $(printf '%s\\n' "$st" | wc -l | tr -d ' ')"
@@ -53,14 +61,15 @@ export interface GitState {
   head: string;
   branch: string;
   stashes: number;
-  worktrees: number;
+  /** linked worktrees (not the main checkout): uncommitted-change count, or "missing" */
+  worktrees: { path: string; dirty: number | "missing" }[];
   dirtyCount: number;
   dirty: string[];
   branches: { name: string; sha: string }[];
 }
 
 export function parseGitState(lines: string[]): GitState {
-  const s: GitState = { head: "", branch: "", stashes: 0, worktrees: 0, dirtyCount: 0, dirty: [], branches: [] };
+  const s: GitState = { head: "", branch: "", stashes: 0, worktrees: [], dirtyCount: 0, dirty: [], branches: [] };
   for (const line of lines) {
     const sp = line.indexOf(" ");
     const key = sp < 0 ? line : line.slice(0, sp);
@@ -69,7 +78,10 @@ export function parseGitState(lines: string[]): GitState {
     else if (key === "HEAD") s.head = /^[0-9a-f]{40,64}$/.test(val.trim()) ? val.trim() : "";
     else if (key === "BRANCH") s.branch = val.trim().replace(/^refs\/heads\//, "");
     else if (key === "STASH") s.stashes = Number(val) || 0;
-    else if (key === "WORKTREES") s.worktrees = Math.max(0, (Number(val) || 1) - 1);
+    else if (key === "WT") {
+      const [n, ...p] = val.split("\t");
+      s.worktrees.push({ path: p.join("\t"), dirty: n === "missing" ? "missing" : Number(n) || 0 });
+    }
     else if (key === "DIRTYCOUNT") s.dirtyCount = Number(val) || 0;
     else if (key === "DIRTY") s.dirty.push(val);
     else if (key === "LB") {
@@ -164,10 +176,55 @@ export function parseCat(lines: string[]): { missing: boolean; content: string }
   return { missing: false, content: start >= 0 && end > start ? lines.slice(start + 1, end).join("\n") : "" };
 }
 
-/** Prints the host's $HOME (so "~/x" config paths can be matched), each .git found, then END. */
+/**
+ * Prints the host's $HOME (so "~/x" config paths can be matched), then one line per checkout found:
+ * "REPO\t<dir>\t<status>\t<remote url>" where status is "ok", "none" (no remote at all) or "err".
+ */
 export function discoverScript(roots: string[], maxDepth: number): string {
   const finds = roots.map(
-    (r) => `if [ -d ${qpath(r)} ]; then find ${qpath(r)} -maxdepth ${Math.floor(maxDepth)} \\( -name node_modules -o -name .cache -o -name .nvm \\) -prune -o -name .git -print -prune 2>/dev/null; else echo "NOROOT ${r.replace(/\n/g, " ")}"; fi`,
+    (r) => `if [ -d ${qpath(r)} ]; then find ${qpath(r)} -maxdepth ${Math.floor(maxDepth)} \\( -name node_modules -o -name .cache -o -name .nvm \\) -prune -o -name .git -print -prune 2>/dev/null; else echo "NOROOT ${r.replace(/\n/g, " ")}" >&3; fi`,
   );
-  return ['echo "HOME $HOME"', ...finds, "echo END", ""].join("\n");
+  return `echo "HOME $HOME"
+{ ${finds.join("\n")}
+} 3>&1 | while IFS= read -r g; do
+  case "$g" in "NOROOT "*) echo "$g"; continue ;; esac
+  d=\${g%/.git}
+  u=$(git -C "$d" config --get remote.origin.url 2>/dev/null); rc=$?
+  if [ $rc -ne 0 ]; then
+    r=$(git -C "$d" remote 2>/dev/null | head -1)
+    if [ -n "$r" ]; then u=$(git -C "$d" config --get "remote.$r.url" 2>/dev/null); rc=$?;
+    elif git -C "$d" rev-parse --git-dir >/dev/null 2>&1; then rc=none;
+    else rc=err; fi
+  fi
+  case "$rc" in 0) st=ok ;; none) st=none ;; *) st=err ;; esac
+  printf 'REPO\t%s\t%s\t%s\n' "$d" "$st" "$u"
+done
+echo END
+`;
+}
+
+export interface FoundRepo {
+  dir: string;
+  remote: "ok" | "none" | "err";
+  url: string;
+}
+
+export function parseDiscover(lines: string[]): { home: string; repos: FoundRepo[]; noRoot: string[] } {
+  const out = { home: "", repos: [] as FoundRepo[], noRoot: [] as string[] };
+  for (const l of lines) {
+    if (l.startsWith("HOME ")) out.home = l.slice(5);
+    else if (l.startsWith("NOROOT ")) out.noRoot.push(l.slice(7));
+    else if (l.startsWith("REPO\t")) {
+      const [, dir, remote, ...url] = l.split("\t");
+      out.repos.push({ dir: dir.replace(/\/+$/, ""), remote: remote as FoundRepo["remote"], url: url.join("\t") });
+    }
+  }
+  return out;
+}
+
+/** owner/name from a GitHub remote URL (https, ssh, or an ~/.ssh/config alias whose name contains "github"). */
+export function githubSlug(url: string): string | null {
+  const m = url.trim().match(/^(?:[a-z+]+:\/\/)?(?:[^@/]+@)?([^:/]+)[:/](?:\d+\/)?([^/]+)\/([^/]+?)(?:\.git)?\/?$/i);
+  if (!m || !/github/i.test(m[1])) return null;
+  return `${m[2]}/${m[3]}`;
 }

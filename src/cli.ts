@@ -5,11 +5,15 @@ import { ConfigError, expandHome, loadConfig } from "./config.js";
 import { findToken, GithubApi } from "./github.js";
 import { counts, formatFromPath, render, type Format } from "./report.js";
 import { buildTasks, runAll } from "./run.js";
+import { scanConfig } from "./scan.js";
 
-const USAGE = `deploy-drift — find servers that drifted from GitHub
+const USAGE = `deploy-drift — find code that never made it to GitHub, on your servers and your laptop
 
 Usage:
-  deploy-drift [options]          run every check in the config
+  deploy-drift scan [dir...]      check every git repo under the dirs (default: .) against GitHub
+       --ssh <host>               ...on a server instead of this machine (dirs are on the server)
+       --depth <n>                how deep to look for repos (default 3)
+  deploy-drift [options]          run every check in the config file
   deploy-drift init [file]        write an example config (default deploy-drift.config.json)
 
 Options:
@@ -32,6 +36,7 @@ interface Args {
   quiet: boolean;
   concurrency: number;
   init?: string;
+  scan?: { roots: string[]; ssh?: string; depth?: number };
 }
 
 function parseArgs(argv: string[]): Args {
@@ -44,6 +49,15 @@ function parseArgs(argv: string[]): Args {
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     switch (arg) {
+      case "scan": a.scan = { roots: [] }; break;
+      case "--ssh": if (!a.scan) throw new ConfigError("--ssh only works with scan"); a.scan.ssh = value(i++, arg); break;
+      case "--depth": {
+        if (!a.scan) throw new ConfigError("--depth only works with scan");
+        const n = Number(value(i++, arg));
+        if (!Number.isInteger(n) || n < 1 || n > 20) throw new ConfigError("--depth must be an integer 1-20");
+        a.scan.depth = n;
+        break;
+      }
       case "init": a.init = argv[i + 1] && !argv[i + 1].startsWith("-") ? argv[++i] : "deploy-drift.config.json"; break;
       case "-c": case "--config": a.config = value(i++, arg); break;
       case "-f": case "--format": {
@@ -62,7 +76,9 @@ function parseArgs(argv: string[]): Args {
         console.log(pkg.version);
         process.exit(0);
       }
-      default: throw new ConfigError(`unknown argument "${arg}"\n\n${USAGE}`);
+      default:
+        if (a.scan && !arg.startsWith("-")) { a.scan.roots.push(arg); break; }
+        throw new ConfigError(`unknown argument "${arg}"\n\n${USAGE}`);
     }
   }
   return a;
@@ -81,7 +97,10 @@ async function main(): Promise<number> {
     await init(args.init);
     return 0;
   }
-  const config = await loadConfig(args.config);
+  if (!args.scan && args.config === "deploy-drift.config.json" && !existsSync(args.config)) {
+    throw new ConfigError("no deploy-drift.config.json here.\n  Quick look at a folder of repos:  deploy-drift scan ~/code\n  Set up servers + repos:          deploy-drift init");
+  }
+  const config = args.scan ? scanConfig(args.scan.roots, args.scan) : await loadConfig(args.config);
   const token = findToken(config.github?.apiUrl);
   if (!token) console.error("warning: no GitHub token (set GITHUB_TOKEN or run `gh auth login`); private repos will fail");
   const gh = new GithubApi(token, config.github?.apiUrl);

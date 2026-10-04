@@ -37,7 +37,7 @@ test("a HEAD commit GitHub has never seen is flagged", async () => {
   writeFileSync(join(dir, "a.txt"), "local\n");
   git(dir, "commit", "-qam", "box-only fix");
   const r = await checkGit(ctx, t);
-  assert.match(r.findings[0].message, /is not on GitHub — it exists only here/);
+  assert.match(r.findings[0].message, /commit \w{7} is not on GitHub — it exists only here/);
 });
 
 test("behind the branch on GitHub", async () => {

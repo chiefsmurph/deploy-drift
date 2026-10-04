@@ -27,6 +27,11 @@ export interface GitTarget extends TargetBase {
   checkBranches?: boolean;
   /** Accept a detached HEAD at the expected commit (submodules, tag pins). Default false. */
   allowDetached?: boolean;
+  /**
+   * Only flag work that is NOT on GitHub (uncommitted changes, stashes, unpushed commits/branches). Being
+   * behind, ahead/unmerged, or on another branch becomes a note. Right for laptops; default false (deployments).
+   */
+  onlyUnpushed?: boolean;
 }
 
 /** A plain directory deployed by copy/rsync: every file must match the repo at `ref`, byte for byte. */
@@ -73,6 +78,13 @@ export interface DiscoverConfig {
   maxDepth?: number;
   /** Paths to accept without a target (exact path or prefix). */
   ignore?: string[];
+  /**
+   * Check every checkout found (that no target covers) as a `git` target, using its GitHub remote.
+   * Repos with no remote are reported as existing only on that machine. Default false: just list them.
+   */
+  check?: boolean;
+  /** With `check`: apply `onlyUnpushed` to every repo found (what `deploy-drift scan` does). */
+  onlyUnpushed?: boolean;
 }
 
 /** Repo-level hygiene on GitHub: open PRs and branches not merged into the default branch (reported as info). */

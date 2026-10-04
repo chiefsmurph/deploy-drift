@@ -1,6 +1,6 @@
 import { checkCommand } from "./checks/command.js";
 import type { Context } from "./checks/context.js";
-import { checkDiscover } from "./checks/discover.js";
+import { checkDiscover, type DiscoverOutcome } from "./checks/discover.js";
 import { checkFiles } from "./checks/files.js";
 import { checkGit, type Outcome } from "./checks/git.js";
 import { checkGithubRepo } from "./checks/github-repos.js";
@@ -12,7 +12,7 @@ interface Task {
   name: string;
   type: string;
   host: string;
-  run: () => Promise<Outcome>;
+  run: () => Promise<Outcome | DiscoverOutcome>;
 }
 
 function targetTask(ctx: Context, t: Target): Task {
@@ -41,28 +41,40 @@ export function buildTasks(ctx: Context, only: string[] = []): Task[] {
   return tasks.filter((t) => want.some((o) => t.name.toLowerCase().includes(o) || t.host.toLowerCase() === o));
 }
 
-async function runTask(task: Task): Promise<CheckResult> {
+async function runTask(task: Task, spawned: Task[]): Promise<CheckResult> {
   const started = Date.now();
   const base = { name: task.name, type: task.type, host: task.host };
   try {
-    const { summary, findings } = await task.run();
-    return { ...base, status: statusOf(findings), summary, findings, ms: Date.now() - started };
+    const outcome = await task.run();
+    spawned.push(...((outcome as DiscoverOutcome).spawn ?? []));
+    return { ...base, status: statusOf(outcome.findings), summary: outcome.summary, findings: outcome.findings, ms: Date.now() - started };
   } catch (e) {
     const message = (e as Error).message || String(e);
     return { ...base, status: "error", summary: message, findings: [{ severity: "drift", message }], ms: Date.now() - started };
   }
 }
 
-/** Run every task with bounded parallelism; results keep config order. */
-export async function runAll(tasks: Task[], concurrency = 6): Promise<CheckResult[]> {
+async function runBatch(tasks: Task[], concurrency: number, spawned: Task[]): Promise<CheckResult[]> {
   const results: CheckResult[] = new Array(tasks.length);
   let next = 0;
   const worker = async () => {
     while (next < tasks.length) {
       const i = next++;
-      results[i] = await runTask(tasks[i]);
+      results[i] = await runTask(tasks[i], spawned);
     }
   };
   await Promise.all(Array.from({ length: Math.min(concurrency, tasks.length) }, worker));
   return results;
+}
+
+/**
+ * Run every task with bounded parallelism (results keep config order), then the per-repo checks that
+ * `discover` with `check: true` handed back.
+ */
+export async function runAll(tasks: Task[], concurrency = 6): Promise<CheckResult[]> {
+  const spawned: Task[] = [];
+  const first = await runBatch(tasks, concurrency, spawned);
+  if (!spawned.length) return first;
+  spawned.sort((a, b) => a.name.localeCompare(b.name));
+  return [...first, ...(await runBatch(spawned, concurrency, []))];
 }
