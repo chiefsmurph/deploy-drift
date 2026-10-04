@@ -53,13 +53,16 @@ test("discover with check: every repo found gets checked, by its own remote", as
   mk("on-gitlab");
   git(join(root, "on-gitlab"), "remote", "set-url", "origin", "https://ci:secret@gitlab.com/acme/x.git");
 
+  git(join(root, "on-github"), "worktree", "add", "-q", "-b", "side", join(root, "on-github-wt"));
   const gh = new FakeGithub({ "acme/web": { sha: headB } });
   const ctx = ctxWith(gh, [], { discover: [{ host: "local", roots: [root], maxDepth: 2, check: true }] });
   const results = await runAll(buildTasks(ctx));
   const by = Object.fromEntries(results.map((r) => [r.name.split("/").pop(), r]));
+  assert.equal(by["on-github-wt"], undefined, "a linked worktree was checked as its own repo");
+  assert.match(results[0].summary, /\+1 linked worktree/);
   assert.match(by["local-only"].summary, /no git remote/);
   assert.equal(by["local-only"].status, "drift");
-  assert.equal(by["on-github"].status, "ok", by["on-github"].summary);
+  assert.equal(by["on-github"].status, "ok", by["on-github"].summary); // a clean extra worktree is just a note
   assert.equal(by["on-gitlab"].status, "ok");
   assert.match(by["on-gitlab"].findings[0].message, /not on GitHub/);
   assert.ok(!by["on-gitlab"].findings[0].message.includes("secret"), "credentials leaked into the report");

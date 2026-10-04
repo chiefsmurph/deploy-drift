@@ -36,7 +36,7 @@ export async function checkFoundRepo(ctx: Context, host: string, repo: FoundRepo
 /** Git checkouts under `roots` that no target covers: new, forgotten or never-pushed repos. */
 export async function checkDiscover(ctx: Context, d: DiscoverConfig): Promise<DiscoverOutcome> {
   const r = await runScript(hostOf(ctx, d.host), discoverScript(d.roots, d.maxDepth ?? 3));
-  const { home, repos, noRoot } = parseDiscover(probeLines(r, "discover"));
+  const { home, repos, noRoot, linked } = parseDiscover(probeLines(r, "discover"));
   // "~/x" in the config means the HOST's home, which may differ from this machine's.
   const fix = (p: string) => norm(p === "~" ? home : p.startsWith("~/") ? home + p.slice(1) : p);
   const pretty = (p: string) => (home && p.startsWith(home + "/") ? "~" + p.slice(home.length) : p);
@@ -53,7 +53,7 @@ export async function checkDiscover(ctx: Context, d: DiscoverConfig): Promise<Di
 
   if (d.check) {
     return {
-      summary: `${repos.length} checkout${repos.length === 1 ? "" : "s"} found; ${unknown.length} checked individually`,
+      summary: `${repos.length} checkout${repos.length === 1 ? "" : "s"} found; ${unknown.length} checked individually${linked.length ? ` (+${linked.length} linked worktree${linked.length === 1 ? "" : "s"}, covered by their repo)` : ""}`,
       findings,
       spawn: unknown.map((x) => ({ name: pretty(x.dir), type: "git", host: d.host, run: () => checkFoundRepo(ctx, d.host, x, d.onlyUnpushed) })),
     };

@@ -1,5 +1,7 @@
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
+import { join } from "node:path";
 
 export interface HostConfig {
   /** SSH destination: an alias from ~/.ssh/config or user@host. */
@@ -167,6 +169,15 @@ export function validate(raw: unknown): Config {
 
   if (errors.length) throw new ConfigError("invalid config:\n  - " + errors.join("\n  - "));
   return c;
+}
+
+/**
+ * Where to find the config when -c isn't given: ./git-drift.config.json, then $GIT_DRIFT_CONFIG,
+ * then ~/.config/git-drift/config.json (a personal default, so plain `git-drift` works from anywhere).
+ */
+export function findConfig(cwd = process.cwd(), env: NodeJS.ProcessEnv = process.env, home = homedir()): string | null {
+  const candidates = [join(cwd, "git-drift.config.json"), env.GIT_DRIFT_CONFIG, join(home, ".config", "git-drift", "config.json")];
+  return candidates.find((p): p is string => Boolean(p) && existsSync(expandHome(p!))) ?? null;
 }
 
 export async function loadConfig(path: string): Promise<Config> {

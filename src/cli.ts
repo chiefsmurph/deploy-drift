@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { copyFile, writeFile } from "node:fs/promises";
 import { existsSync, readFileSync } from "node:fs";
-import { ConfigError, expandHome, loadConfig } from "./config.js";
+import { ConfigError, expandHome, findConfig, loadConfig } from "./config.js";
 import { findToken, GithubApi } from "./github.js";
 import { counts, formatFromPath, render, type Format } from "./report.js";
 import { buildTasks, runAll } from "./run.js";
@@ -17,7 +17,8 @@ Usage:
   git-drift init [file]        write an example config (default git-drift.config.json)
 
 Options:
-  -c, --config <file>      config file (default: git-drift.config.json)
+  -c, --config <file>      config file (default: ./git-drift.config.json, else $GIT_DRIFT_CONFIG,
+                           else ~/.config/git-drift/config.json)
   -f, --format <fmt>       stdout format: text | markdown | html | json (default: text)
   -o, --out <file>         also write a report; format from the extension (.md .html .json .txt). Repeatable.
       --only <name>        run only checks whose name contains <name>, or on host <name>. Repeatable.
@@ -29,7 +30,7 @@ GitHub auth: GITHUB_TOKEN or GH_TOKEN, else the token from \`gh auth login\`.
 Exit codes: 0 clean, 1 drift found, 2 a check could not run or the config is invalid.`;
 
 interface Args {
-  config: string;
+  config?: string;
   format: Format;
   outs: string[];
   only: string[];
@@ -40,7 +41,7 @@ interface Args {
 }
 
 function parseArgs(argv: string[]): Args {
-  const a: Args = { config: "git-drift.config.json", format: "text", outs: [], only: [], quiet: false, concurrency: 6 };
+  const a: Args = { format: "text", outs: [], only: [], quiet: false, concurrency: 6 };
   const value = (i: number, flag: string) => {
     const v = argv[i + 1];
     if (v === undefined || v.startsWith("-")) throw new ConfigError(`${flag} needs a value`);
@@ -97,10 +98,14 @@ async function main(): Promise<number> {
     await init(args.init);
     return 0;
   }
-  if (!args.scan && args.config === "git-drift.config.json" && !existsSync(args.config)) {
-    throw new ConfigError("no git-drift.config.json here.\n  Quick look at a folder of repos:  git-drift scan ~/code\n  Set up servers + repos:          git-drift init");
+  const configPath = args.scan ? null : args.config ?? findConfig();
+  if (!args.scan && !configPath) {
+    throw new ConfigError(
+      "no config found (./git-drift.config.json, $GIT_DRIFT_CONFIG, ~/.config/git-drift/config.json).\n" +
+        "  Quick look at a folder of repos:  git-drift scan ~/code\n  Set up servers + repos:          git-drift init",
+    );
   }
-  const config = args.scan ? scanConfig(args.scan.roots, args.scan) : await loadConfig(args.config);
+  const config = args.scan ? scanConfig(args.scan.roots, args.scan) : await loadConfig(configPath!);
   const token = findToken(config.github?.apiUrl);
   if (!token) console.error("warning: no GitHub token (set GITHUB_TOKEN or run `gh auth login`); private repos will fail");
   const gh = new GithubApi(token, config.github?.apiUrl);

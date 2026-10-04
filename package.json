@@ -25,7 +25,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "build": "rm -rf dist && tsc -p .",
+    "build": "rm -rf dist && tsc -p . && chmod +x dist/src/cli.js",
     "typecheck": "tsc -p . --noEmit",
     "test": "npm run build && node --test dist/test/*.test.js",
     "prepublishOnly": "npm test"

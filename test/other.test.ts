@@ -136,3 +136,15 @@ test("runner: a throwing check becomes an error result; reports render", async (
   assert.equal(JSON.parse(render(results, "json")).summary.error, 1);
   assert.equal(buildTasks(ctx, ["bad"]).length, 1);
 });
+
+test("findConfig: ./git-drift.config.json, then $GIT_DRIFT_CONFIG, then ~/.config/git-drift/config.json", async () => {
+  const { findConfig } = await import("../src/config.js");
+  const home = tempDir({ ".config/git-drift/config.json": "{}" });
+  const cwd = tempDir();
+  const envFile = join(tempDir({ "c.json": "{}" }), "c.json");
+  assert.equal(findConfig(cwd, {}, home), join(home, ".config/git-drift/config.json"));
+  assert.equal(findConfig(cwd, { GIT_DRIFT_CONFIG: envFile }, home), envFile);
+  const local = tempDir({ "git-drift.config.json": "{}" });
+  assert.equal(findConfig(local, { GIT_DRIFT_CONFIG: envFile }, home), join(local, "git-drift.config.json"));
+  assert.equal(findConfig(cwd, {}, tempDir()), null);
+});

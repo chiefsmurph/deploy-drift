@@ -189,6 +189,9 @@ export function discoverScript(roots: string[], maxDepth: number): string {
 } 3>&1 | while IFS= read -r g; do
   case "$g" in "NOROOT "*) echo "$g"; continue ;; esac
   d=\${g%/.git}
+  # A linked worktree's .git is a file pointing into the main repo's worktrees/ dir; the main repo's
+  # check already reports its uncommitted changes, so don't check it twice.
+  if [ -f "$g" ]; then case "$(sed -n 1p "$g" 2>/dev/null)" in *"/worktrees/"*) printf 'LINKED\t%s\n' "$d"; continue ;; esac; fi
   u=$(git -C "$d" config --get remote.origin.url 2>/dev/null); rc=$?
   if [ $rc -ne 0 ]; then
     r=$(git -C "$d" remote 2>/dev/null | head -1)
@@ -209,11 +212,12 @@ export interface FoundRepo {
   url: string;
 }
 
-export function parseDiscover(lines: string[]): { home: string; repos: FoundRepo[]; noRoot: string[] } {
-  const out = { home: "", repos: [] as FoundRepo[], noRoot: [] as string[] };
+export function parseDiscover(lines: string[]): { home: string; repos: FoundRepo[]; noRoot: string[]; linked: string[] } {
+  const out = { home: "", repos: [] as FoundRepo[], noRoot: [] as string[], linked: [] as string[] };
   for (const l of lines) {
     if (l.startsWith("HOME ")) out.home = l.slice(5);
     else if (l.startsWith("NOROOT ")) out.noRoot.push(l.slice(7));
+    else if (l.startsWith("LINKED\t")) out.linked.push(l.slice(7));
     else if (l.startsWith("REPO\t")) {
       const [, dir, remote, ...url] = l.split("\t");
       out.repos.push({ dir: dir.replace(/\/+$/, ""), remote: remote as FoundRepo["remote"], url: url.join("\t") });
