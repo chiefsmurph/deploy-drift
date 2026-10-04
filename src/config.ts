@@ -83,7 +83,7 @@ export interface DiscoverConfig {
    * Repos with no remote are reported as existing only on that machine. Default false: just list them.
    */
   check?: boolean;
-  /** With `check`: apply `onlyUnpushed` to every repo found (what `deploy-drift scan` does). */
+  /** With `check`: apply `onlyUnpushed` to every repo found (what `git-drift scan` does). */
   onlyUnpushed?: boolean;
 }
 

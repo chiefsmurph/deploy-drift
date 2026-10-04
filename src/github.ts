@@ -62,7 +62,7 @@ export class GithubApi implements Github {
       headers: {
         accept: "application/vnd.github+json",
         "x-github-api-version": "2022-11-28",
-        "user-agent": "deploy-drift",
+        "user-agent": "git-drift",
         ...(this.token ? { authorization: `Bearer ${this.token}` } : {}),
       },
       signal: AbortSignal.timeout(30_000),

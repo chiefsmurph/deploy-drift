@@ -7,17 +7,17 @@ import { counts, formatFromPath, render, type Format } from "./report.js";
 import { buildTasks, runAll } from "./run.js";
 import { scanConfig } from "./scan.js";
 
-const USAGE = `deploy-drift — find code that never made it to GitHub, on your servers and your laptop
+const USAGE = `git-drift — find code that never made it to GitHub, on your servers and your laptop
 
 Usage:
-  deploy-drift scan [dir...]      check every git repo under the dirs (default: .) against GitHub
+  git-drift scan [dir...]      check every git repo under the dirs (default: .) against GitHub
        --ssh <host>               ...on a server instead of this machine (dirs are on the server)
        --depth <n>                how deep to look for repos (default 3)
-  deploy-drift [options]          run every check in the config file
-  deploy-drift init [file]        write an example config (default deploy-drift.config.json)
+  git-drift [options]          run every check in the config file
+  git-drift init [file]        write an example config (default git-drift.config.json)
 
 Options:
-  -c, --config <file>      config file (default: deploy-drift.config.json)
+  -c, --config <file>      config file (default: git-drift.config.json)
   -f, --format <fmt>       stdout format: text | markdown | html | json (default: text)
   -o, --out <file>         also write a report; format from the extension (.md .html .json .txt). Repeatable.
       --only <name>        run only checks whose name contains <name>, or on host <name>. Repeatable.
@@ -40,7 +40,7 @@ interface Args {
 }
 
 function parseArgs(argv: string[]): Args {
-  const a: Args = { config: "deploy-drift.config.json", format: "text", outs: [], only: [], quiet: false, concurrency: 6 };
+  const a: Args = { config: "git-drift.config.json", format: "text", outs: [], only: [], quiet: false, concurrency: 6 };
   const value = (i: number, flag: string) => {
     const v = argv[i + 1];
     if (v === undefined || v.startsWith("-")) throw new ConfigError(`${flag} needs a value`);
@@ -58,7 +58,7 @@ function parseArgs(argv: string[]): Args {
         a.scan.depth = n;
         break;
       }
-      case "init": a.init = argv[i + 1] && !argv[i + 1].startsWith("-") ? argv[++i] : "deploy-drift.config.json"; break;
+      case "init": a.init = argv[i + 1] && !argv[i + 1].startsWith("-") ? argv[++i] : "git-drift.config.json"; break;
       case "-c": case "--config": a.config = value(i++, arg); break;
       case "-f": case "--format": {
         const f = value(i++, arg) as Format;
@@ -87,8 +87,8 @@ function parseArgs(argv: string[]): Args {
 async function init(path: string): Promise<void> {
   const target = expandHome(path);
   if (existsSync(target)) throw new ConfigError(`${path} already exists — not overwriting`);
-  await copyFile(new URL("../../examples/deploy-drift.config.example.json", import.meta.url), target);
-  console.log(`wrote ${path} — edit hosts and targets, then run: deploy-drift -c ${path}`);
+  await copyFile(new URL("../../examples/git-drift.config.example.json", import.meta.url), target);
+  console.log(`wrote ${path} — edit hosts and targets, then run: git-drift -c ${path}`);
 }
 
 async function main(): Promise<number> {
@@ -97,8 +97,8 @@ async function main(): Promise<number> {
     await init(args.init);
     return 0;
   }
-  if (!args.scan && args.config === "deploy-drift.config.json" && !existsSync(args.config)) {
-    throw new ConfigError("no deploy-drift.config.json here.\n  Quick look at a folder of repos:  deploy-drift scan ~/code\n  Set up servers + repos:          deploy-drift init");
+  if (!args.scan && args.config === "git-drift.config.json" && !existsSync(args.config)) {
+    throw new ConfigError("no git-drift.config.json here.\n  Quick look at a folder of repos:  git-drift scan ~/code\n  Set up servers + repos:          git-drift init");
   }
   const config = args.scan ? scanConfig(args.scan.roots, args.scan) : await loadConfig(args.config);
   const token = findToken(config.github?.apiUrl);
@@ -119,7 +119,7 @@ main().then(
     process.exitCode = code; // not process.exit(): that can cut off a large piped report
   },
   (e) => {
-    console.error(e instanceof ConfigError ? e.message : `deploy-drift: ${(e as Error).stack ?? e}`);
+    console.error(e instanceof ConfigError ? e.message : `git-drift: ${(e as Error).stack ?? e}`);
     process.exitCode = 2;
   },
 );

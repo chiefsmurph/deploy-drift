@@ -1,13 +1,13 @@
-# deploy-drift
+# git-drift
 
 **Find code that never made it to GitHub: on your laptop and on your servers.**
 
 ```sh
-npx deploy-drift scan ~/code
+npx git-drift scan ~/code
 ```
 
 ```
-deploy-drift — 4 drifted, 31 clean
+git-drift — 4 drifted, 31 clean
 
 ✗ ~/code/api [local] main @ 2c71f0e — 3 uncommitted changes (+1 more)
     • 3 uncommitted changes
@@ -29,13 +29,13 @@ Work goes missing in two places:
   "just fixing it" on the box, a half-failed deploy, a server three commits behind. Deploy-on-push moves code
   from the repo to the server; nothing checks the other direction.
 
-`deploy-drift` checks every repo and deployment against GitHub and reports what doesn't match.
+`git-drift` checks every repo and deployment against GitHub and reports what doesn't match.
 
 ## Quick start: your laptop
 
 ```sh
-npx deploy-drift scan ~/code            # every git repo under ~/code (default depth 3)
-npx deploy-drift scan ~/code ~/work     # several folders
+npx git-drift scan ~/code            # every git repo under ~/code (default depth 3)
+npx git-drift scan ~/code ~/work     # several folders
 ```
 
 No config. For each repo it finds, it reads the GitHub remote and flags:
@@ -52,15 +52,15 @@ No config. For each repo it finds, it reads the GitHub remote and flags:
 The same scan works over SSH. Nothing is installed on the server:
 
 ```sh
-npx deploy-drift scan --ssh web-1 /srv /opt
+npx git-drift scan --ssh web-1 /srv /opt
 ```
 
 For deployments that aren't plain git checkouts (rsync copies, build output, version stamps), and for a
-weekly report across everything, write a config (`deploy-drift init` writes an example):
+weekly report across everything, write a config (`git-drift init` writes an example):
 
 ```
-$ deploy-drift
-deploy-drift — 2 drifted, 31 clean
+$ git-drift
+git-drift — 2 drifted, 31 clean
 
 ✗ cron jobs [web] 1 differ, 1 only here vs acme/ops/cron @ main 3f9c2d1
     • 1 file differs from main 3f9c2d1
@@ -76,7 +76,7 @@ deploy-drift — 2 drifted, 31 clean
 - **Build output** (`dist/`, `build/`) can't be compared to source with git.
 - **`git status`** can't tell you a commit was never pushed, that a stash exists, or that you're 4 commits behind.
 
-For copied deployments `deploy-drift` compares content, not git metadata. It hashes every file on the server
+For copied deployments `git-drift` compares content, not git metadata. It hashes every file on the server
 the way git does and checks it against the blob SHAs in GitHub's tree for the expected commit.
 
 ## How it works
@@ -91,7 +91,7 @@ Needs Node 20+ (macOS or Linux). GitHub auth comes from `GITHUB_TOKEN` / `GH_TOK
 
 ## Config
 
-`deploy-drift.config.json`:
+`git-drift.config.json`:
 
 ```json
 {
@@ -142,9 +142,9 @@ path) or `pattern` (a regex whose first group is the SHA) on `stamp`; `expect`, 
 ## Usage
 
 ```
-deploy-drift scan [dir...] [--ssh host] [--depth n]     every repo under the dirs
-deploy-drift [-c config.json]                           everything in a config file
-deploy-drift init                                       write an example config
+git-drift scan [dir...] [--ssh host] [--depth n]     every repo under the dirs
+git-drift [-c config.json]                           everything in a config file
+git-drift init                                       write an example config
 
   -f text|markdown|html|json   stdout format          -o report.md   also write a report (repeatable)
   -q                           hide clean checks      --only name    only matching checks / host

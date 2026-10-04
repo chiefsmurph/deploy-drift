@@ -29,7 +29,7 @@ function ordered(results: CheckResult[], quiet: boolean): CheckResult[] {
 }
 
 function text(results: CheckResult[], quiet: boolean, when: Date): string {
-  const lines = [`deploy-drift — ${headline(results)}  (${when.toISOString().slice(0, 16).replace("T", " ")} UTC)`, ""];
+  const lines = [`git-drift — ${headline(results)}  (${when.toISOString().slice(0, 16).replace("T", " ")} UTC)`, ""];
   for (const r of ordered(results, quiet)) {
     lines.push(`${ICON[r.status]} ${r.name} [${r.host}] ${r.summary}`);
     for (const f of r.findings) {
@@ -43,7 +43,7 @@ function text(results: CheckResult[], quiet: boolean, when: Date): string {
 }
 
 function markdown(results: CheckResult[], quiet: boolean, when: Date): string {
-  const out = [`## deploy-drift: ${headline(results)}`, "", `_${when.toISOString().slice(0, 16).replace("T", " ")} UTC_`, ""];
+  const out = [`## git-drift: ${headline(results)}`, "", `_${when.toISOString().slice(0, 16).replace("T", " ")} UTC_`, ""];
   const list = ordered(results, quiet);
   const problems = list.filter((r) => r.status !== "ok");
   if (problems.length) {
@@ -81,7 +81,7 @@ function html(results: CheckResult[], quiet: boolean, when: Date): string {
       return `<tr><td style="padding:6px;vertical-align:top;color:${color[r.status]};font-weight:600">${ICON[r.status]}</td><td style="padding:6px;vertical-align:top"><b>${esc(r.name)}</b> <span style="color:#666">${esc(r.host)}</span><div>${esc(r.summary)}</div>${details}</td></tr>`;
     })
     .join("");
-  return `<div style="font-family:-apple-system,Segoe UI,sans-serif;font-size:14px"><h2 style="margin:0 0 4px">deploy-drift: ${esc(headline(results))}</h2><p style="color:#666;margin:0 0 12px">${when.toISOString().slice(0, 16).replace("T", " ")} UTC</p><table style="border-collapse:collapse">${rows}</table></div>\n`;
+  return `<div style="font-family:-apple-system,Segoe UI,sans-serif;font-size:14px"><h2 style="margin:0 0 4px">git-drift: ${esc(headline(results))}</h2><p style="color:#666;margin:0 0 12px">${when.toISOString().slice(0, 16).replace("T", " ")} UTC</p><table style="border-collapse:collapse">${rows}</table></div>\n`;
 }
 
 export function render(results: CheckResult[], format: Format, quiet = false, when = new Date()): string {
