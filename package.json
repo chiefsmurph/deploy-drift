@@ -1,7 +1,7 @@
 {
   "name": "deploy-drift",
   "version": "0.1.0",
-  "description": "Find servers that drifted from GitHub: stale deploys, hand edits, uncommitted files, and code that exists only on the box.",
+  "description": "Find code that never made it to GitHub: on your servers and your laptop. Uncommitted edits, unpushed branches, stale or hand-edited deploys, checked file by file over plain SSH.",
   "author": "John Murphy (https://github.com/chiefsmurph)",
   "repository": {
     "type": "git",
@@ -31,17 +31,20 @@
     "prepublishOnly": "npm test"
   },
   "keywords": [
-    "drift",
+    "audit",
     "deploy",
     "devops",
-    "ssh",
+    "drift",
+    "file-integrity",
     "git",
+    "git-status",
     "github",
-    "audit",
-    "server",
-    "vps",
     "rsync",
-    "file-integrity"
+    "server",
+    "ssh",
+    "uncommitted",
+    "unpushed",
+    "vps"
   ],
   "license": "MIT",
   "dependencies": {

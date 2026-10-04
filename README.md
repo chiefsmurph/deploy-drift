@@ -1,17 +1,17 @@
 # deploy-drift
 
-**Find code that exists only on your servers.**
+**Find code that never made it to GitHub: on your servers and on your laptop.**
 
 Deploy-on-push moves code from the repo to the server. Nothing checks the other direction. Over time servers
 drift from GitHub: a hot-fix over SSH, a cron script edited in place, an AI coding agent with shell access
-"just fixing it" on the box, a deploy that half-failed, a server three commits behind. Then the next
-`rsync --delete` silently wipes the fix, or the next `git pull` refuses to run, or nobody knows what's actually live.
+"just fixing it" on the box, a deploy that half-failed, a server three commits behind. Your own machine drifts
+too: uncommitted work, forgotten stashes, branches you never pushed, a commit that only exists in one clone.
 
-`deploy-drift` checks every deployment you list against GitHub, file by file, and reports what doesn't match.
+`deploy-drift` checks every deployment and every local repo you list against GitHub, and reports what doesn't match.
 
 ```
 $ deploy-drift -q
-deploy-drift — 2 drifted, 31 clean  (2026-10-04 15:00 UTC)
+deploy-drift — 3 drifted, 30 clean  (2026-10-04 15:00 UTC)
 
 ✗ cron jobs [web] 1 differ, 1 only here vs acme/ops/cron @ main 3f9c2d1
     • 1 file differs from main 3f9c2d1
@@ -19,6 +19,13 @@ deploy-drift — 2 drifted, 31 clean  (2026-10-04 15:00 UTC)
     • 1 file exists only here (not in the repo, not gitignored)
         cleanup-old-logs.sh
 ✗ api [web] main @ 8e0b1a4 — deployed commit 8e0b1a4 is not on GitHub — it exists only here
+✗ laptop: api [local] main @ 2c71f0e — 3 uncommitted changes (+1 more)
+    • 3 uncommitted changes
+         M src/billing.ts
+        ?? scripts/backfill.ts
+        ?? notes.md
+    • 1 local branch has commits not on GitHub
+        spike/new-pricing (9b2e44d)
 ```
 
 ## Why not just `git status`?
@@ -54,7 +61,7 @@ Needs Node 20+ and `ssh` on the machine running it (macOS or Linux). For GitHub 
 
 | type | for | passes when |
 |---|---|---|
-| `git` | a git checkout on a server (or your laptop) | on `ref` at the same commit as GitHub, nothing uncommitted, no stashes, no local branch with commits GitHub has never seen |
+| `git` | a git checkout on a server, or a repo on your own machine (no `host`) | on `ref` at the same commit as GitHub, nothing uncommitted, no stashes, no local branch with commits GitHub has never seen |
 | `files` | a directory deployed by rsync / copy / CI | every file matches the repo at `ref` (optionally a `subdir`), no repo file is missing, and no extra file exists that the repo's `.gitignore` doesn't explain |
 | `stamp` | a build that records its commit (e.g. `build/version.json`) | the recorded SHA is `ref` |
 | `command` | anything else | the command exits 0 and its output matches `expect` (and not `fail`) |
