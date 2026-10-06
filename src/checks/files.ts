@@ -5,8 +5,8 @@ import { runScript } from "../exec.js";
 import type { Github, TreeEntry } from "../github.js";
 import { hashScript, parseHashed, probeLines } from "../remote.js";
 import type { Finding } from "../types.js";
-import { capped, hostOf, slug, type Context } from "./context.js";
-import type { Outcome } from "./git.js";
+import { capped, hostOf, isLocal, onHost, slug, type Context } from "./context.js";
+import { shownPath, type Outcome } from "./git.js";
 
 /** Always excluded, on top of anything configured. */
 export const DEFAULT_EXCLUDE = [".git", "node_modules"];
@@ -98,13 +98,52 @@ export async function checkFiles(ctx: Context, t: FilesTarget): Promise<Outcome>
 
   const findings: Finding[] = [];
   const label = `${want.ref} ${short(want.sha)}`;
-  if (differ.length) findings.push({ severity: "drift", message: `${differ.length} file${differ.length === 1 ? " differs" : "s differ"} from ${label}`, items: capped(differ.sort()) });
+  const local = isLocal(ctx, t.host);
+  const dest = hostOf(ctx, t.host).ssh ?? "";
+  const hostFile = (rel: string) => `${t.path.replace(/\/+$/, "")}/${rel}`;
+  const fromGithub = (rel: string) => `gh api -H 'Accept: application/vnd.github.raw' 'repos/${repo}/contents/${prefix}${rel}?ref=${want.sha}'`;
+  const onBox = (cmd: string) => `$ ${onHost(ctx, t.host, cmd)}`;
+  if (differ.length) {
+    const f = differ.sort()[0];
+    findings.push({
+      severity: "drift",
+      message: `${differ.length} file${differ.length === 1 ? " differs" : "s differ"} from ${label}`,
+      items: capped(differ),
+      fix: [
+        `First decide which side is right. See the difference (GitHub on the left, ${local ? "this machine" : t.host} on the right):`,
+        `$ diff <(${fromGithub(f)}) <(${local ? `cat ${shownPath(hostFile(f))}` : `ssh ${dest} 'cat ${shownPath(hostFile(f))}'`})`,
+        `Keep the ${local ? "local" : "server"} version: copy it into your clone of ${repo}${prefix ? ` (${prefix.slice(0, -1)}/)` : ""}, commit and push.`,
+        ...(local ? [] : [`$ scp ${dest}:${shownPath(hostFile(f))} <your clone>/${prefix}${f}`]),
+        `Keep GitHub's: redeploy, or overwrite just this file:`,
+        `$ ${fromGithub(f)} | ${local ? `cat > ${shownPath(hostFile(f))}` : `ssh ${dest} 'cat > ${shownPath(hostFile(f))}'`}`,
+      ],
+    });
+  }
   if (truncated) {
     // GitHub cut the file list short: "missing"/"only here" can't be trusted, only content mismatches can.
     findings.push({ severity: "info", message: "GitHub truncated the repo's file list (very large repo): only changed files were checked, not missing or extra ones" });
   } else {
-    if (missing.length) findings.push({ severity: "drift", message: `${missing.length} file${missing.length === 1 ? " is" : "s are"} in the repo but missing here`, items: capped(missing.sort()) });
-    if (extra.length) findings.push({ severity: "drift", message: `${extra.length} file${extra.length === 1 ? " exists" : "s exist"} only here (not in the repo, not gitignored)`, items: capped(extra) });
+    if (missing.length) {
+      findings.push({
+        severity: "drift",
+        message: `${missing.length} file${missing.length === 1 ? " is" : "s are"} in the repo but missing here`,
+        items: capped(missing.sort()),
+        fix: [`Redeploy ${repo} @ ${want.ref}. If the files were removed on purpose, delete them from the repo too (or add them to this target's "ignore").`],
+      });
+    }
+    if (extra.length) {
+      findings.push({
+        severity: "drift",
+        message: `${extra.length} file${extra.length === 1 ? " exists" : "s exist"} only here (not in the repo, not gitignored)`,
+        items: capped(extra),
+        fix: [
+          "For each file, one of:",
+          `• real code or config: add it to ${repo}${local ? "" : ` (copy it down: scp ${dest}:${shownPath(hostFile(extra[0]))} <your clone>/${prefix}${extra[0]})`}, commit and push`,
+          `• generated or runtime (logs, data, caches, .env): add it to the repo's .gitignore, or to this target's "ignore" in the config`,
+          `• leftover junk: delete it${local ? "" : ` (${onBox(`rm ${shownPath(hostFile(extra[0]))}`).slice(2)})`}`,
+        ],
+      });
+    }
   }
   if (box.unreadable.length) findings.push({ severity: "info", message: `${box.unreadable.length} unreadable file(s) skipped`, items: capped(box.unreadable.sort()) });
   if (repoIgnore.skipped) findings.push({ severity: "info", message: `${repoIgnore.skipped} .gitignore file(s) beyond the first ${MAX_GITIGNORES} were not applied` });

@@ -21,6 +21,18 @@ git-drift — 4 drifted, 31 clean
 ✗ ~/code/web [local] main @ 4be19d0 — uncommitted changes in 1 other worktree
 ```
 
+Every finding says how to resolve it, with commands for that exact repo, path and server:
+
+```
+✗ ~/code/api [local] main @ 2c71f0e — 1 local branch has commits not on GitHub
+    • 1 local branch has commits not on GitHub
+        spike/new-pricing (9b2e44d)
+      → how to fix:
+          Push it (one command per branch):
+          $ cd ~/code/api && git push -u origin spike/new-pricing
+          Abandoned instead? Delete it: `git branch -D <name>`.
+```
+
 Work goes missing in two places:
 
 - **Your machine:** uncommitted changes, forgotten stashes, branches you never pushed, a commit that lives
@@ -85,6 +97,8 @@ the way git does and checks it against the blob SHAs in GitHub's tree for the ex
   existing SSH (`ssh host sh -s`). The host needs `git` (or `python3` for file hashing).
 - **No clones.** The expected state comes from the GitHub API.
 - **Deterministic.** No AI in the loop. Exit code 0 = clean, 1 = drift, 2 = a check failed to run.
+- **Actionable.** Each finding includes how to fix it: what to look at first, then the command for each way to resolve it.
+  `-f json` carries the same steps (`findings[].fix`) for scripts and AI agents.
 
 Needs Node 20+ (macOS or Linux). GitHub auth comes from `GITHUB_TOKEN` / `GH_TOKEN`, or the token from
 `gh auth login`. Private repos need a token with read access.

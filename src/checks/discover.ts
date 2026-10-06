@@ -22,7 +22,19 @@ export interface DiscoverOutcome extends Outcome {
 /** A repo found by discover: no remote = exists only here; a GitHub remote = full git check. */
 export async function checkFoundRepo(ctx: Context, host: string, repo: FoundRepo, onlyUnpushed = false): Promise<Outcome> {
   if (repo.remote === "none") {
-    return { summary: "no git remote: nothing in this repo is on GitHub", findings: [{ severity: "drift", message: "no git remote: this repo exists only here" }] };
+    const name = repo.dir.split("/").pop() ?? "repo";
+    return {
+      summary: "no git remote: nothing in this repo is on GitHub",
+      findings: [{
+        severity: "drift",
+        message: "no git remote: this repo exists only here",
+        fix: [
+          "Back it up as a private GitHub repo (commit anything uncommitted first):",
+          `$ cd ${repo.dir.replace(/'/g, "")} && gh repo create ${name} --private --source . --push`,
+          "Or delete the folder if you don't need it.",
+        ],
+      }],
+    };
   }
   if (repo.remote === "err") throw new Error(`could not read ${repo.dir} (permissions or "dubious ownership")`);
   const slug = githubSlug(repo.url);
@@ -59,7 +71,15 @@ export async function checkDiscover(ctx: Context, d: DiscoverConfig): Promise<Di
     };
   }
   if (unknown.length) {
-    findings.unshift({ severity: "drift", message: `${unknown.length} git checkout${unknown.length === 1 ? " is" : "s are"} not covered by any target`, items: capped(unknown.map((x) => pretty(x.dir)), 30) });
+    findings.unshift({
+      severity: "drift",
+      message: `${unknown.length} git checkout${unknown.length === 1 ? " is" : "s are"} not covered by any target`,
+      items: capped(unknown.map((x) => pretty(x.dir)), 30),
+      fix: [
+        'Add a "git" target for each one you care about, list the rest under this discover entry\'s "ignore",',
+        'or set "check": true on the discover entry to check every repo it finds automatically.',
+      ],
+    });
   }
   return {
     summary: unknown.length ? `${unknown.length} git checkout${unknown.length === 1 ? "" : "s"} not in the config` : `${repos.length} checkouts found, all covered`,

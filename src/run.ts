@@ -50,7 +50,8 @@ async function runTask(task: Task, spawned: Task[]): Promise<CheckResult> {
     return { ...base, status: statusOf(outcome.findings), summary: outcome.summary, findings: outcome.findings, ms: Date.now() - started };
   } catch (e) {
     const message = (e as Error).message || String(e);
-    return { ...base, status: "error", summary: message, findings: [{ severity: "drift", message }], ms: Date.now() - started };
+    const fix = ["The check couldn't run, so this machine is unverified (not necessarily broken). Usually SSH access, permissions, a GitHub token, or a renamed path. Retry just this check:", `$ git-drift --only ${JSON.stringify(task.name)}`];
+    return { ...base, status: "error", summary: message, findings: [{ severity: "drift", message, fix }], ms: Date.now() - started };
   }
 }
 

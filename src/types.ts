@@ -8,6 +8,8 @@ export interface Finding {
   message: string;
   /** Optional detail lines (file paths, git status lines, command output). */
   items?: string[];
+  /** How to resolve it: plain lines, and commands prefixed with "$ ". */
+  fix?: string[];
 }
 
 export interface CheckResult {

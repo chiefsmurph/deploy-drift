@@ -31,7 +31,11 @@ export async function checkStamp(ctx: Context, t: StampTarget): Promise<Outcome>
     return { summary: `no commit SHA found in ${t.path}`, findings: [{ severity: "drift", message: `no commit SHA found in ${t.path}` }] };
   }
   const rel = await relationFinding(ctx.gh, repo, want, sha.toLowerCase());
+  const fix =
+    rel?.kind === "missing"
+      ? [`The build came from a commit GitHub has never seen (a local build?). Push that commit, or redeploy ${repo} @ ${want.ref} from CI.`]
+      : [`Redeploy ${repo} @ ${want.ref} (re-run its deploy).`];
   return rel
-    ? { summary: `deployed ${short(sha)} — ${rel.message}`, findings: [rel] }
+    ? { summary: `deployed ${short(sha)} — ${rel.message}`, findings: [{ severity: rel.severity, message: rel.message, fix }] }
     : { summary: `deployed ${short(sha)} = ${want.ref} on GitHub`, findings: [] };
 }
