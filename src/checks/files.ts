@@ -3,7 +3,8 @@ import { gitBlobSha, short } from "../blob.js";
 import type { FilesTarget } from "../config.js";
 import { runScript } from "../exec.js";
 import type { Github, TreeEntry } from "../github.js";
-import { hashScript, parseHashed, probeLines } from "../remote.js";
+import { capLines, unifiedDiff } from "../evidence.js";
+import { catManyScript, hashScript, lsScript, parseCatMany, parseHashed, probeLines } from "../remote.js";
 import type { Finding } from "../types.js";
 import { capped, hostOf, isLocal, onHost, slug, type Context } from "./context.js";
 import { shownPath, type Outcome } from "./git.js";
@@ -58,7 +59,7 @@ export async function checkFiles(ctx: Context, t: FilesTarget): Promise<Outcome>
     runScript(hostOf(ctx, t.host), hashScript(t.path, exclude), 600_000),
   ]);
   const box = parseHashed(probeLines(r, `hashing ${t.path}`));
-  if (box.error === "missing") return { summary: `${t.path} does not exist`, findings: [{ severity: "drift", message: `${t.path} does not exist` }] };
+  if (box.error === "missing") return { summary: `${t.path} does not exist`, findings: [{ severity: "drift", code: "missing-path", message: `${t.path} does not exist` }] };
   if (box.error === "nohash") throw new Error(`host has neither git nor python3 to hash files`);
   if (box.error) throw new Error(`hashing files failed on the host (${box.error})`);
 
@@ -107,6 +108,7 @@ export async function checkFiles(ctx: Context, t: FilesTarget): Promise<Outcome>
     const f = differ.sort()[0];
     findings.push({
       severity: "drift",
+      code: "files-differ",
       message: `${differ.length} file${differ.length === 1 ? " differs" : "s differ"} from ${label}`,
       items: capped(differ),
       fix: [
@@ -126,6 +128,7 @@ export async function checkFiles(ctx: Context, t: FilesTarget): Promise<Outcome>
     if (missing.length) {
       findings.push({
         severity: "drift",
+        code: "files-missing",
         message: `${missing.length} file${missing.length === 1 ? " is" : "s are"} in the repo but missing here`,
         items: capped(missing.sort()),
         fix: [`Redeploy ${repo} @ ${want.ref}. If the files were removed on purpose, delete them from the repo too (or add them to this target's "ignore").`],
@@ -134,6 +137,7 @@ export async function checkFiles(ctx: Context, t: FilesTarget): Promise<Outcome>
     if (extra.length) {
       findings.push({
         severity: "drift",
+        code: "files-extra",
         message: `${extra.length} file${extra.length === 1 ? " exists" : "s exist"} only here (not in the repo, not gitignored)`,
         items: capped(extra),
         fix: [
@@ -147,6 +151,29 @@ export async function checkFiles(ctx: Context, t: FilesTarget): Promise<Outcome>
   }
   if (box.unreadable.length) findings.push({ severity: "info", message: `${box.unreadable.length} unreadable file(s) skipped`, items: capped(box.unreadable.sort()) });
   if (repoIgnore.skipped) findings.push({ severity: "info", message: `${repoIgnore.skipped} .gitignore file(s) beyond the first ${MAX_GITIGNORES} were not applied` });
+
+  if (ctx.evidence) {
+    const host = hostOf(ctx, t.host);
+    const hostLabel = local ? "local" : t.host ?? "host";
+    const differF = findings.find((f) => f.code === "files-differ");
+    if (differF) {
+      const sample = differ.slice(0, 3);
+      const got = parseCatMany(probeLines(await runScript(host, catManyScript(t.path, sample)), "reading changed files"), sample.length);
+      const lines: string[] = [];
+      for (const [i, rel] of sample.entries()) {
+        const repoText = (await ctx.gh.blob(repo, expected.get(rel)!.sha)).toString("utf8");
+        lines.push(`# ${rel}  (${hostLabel}: ${got[i].ls || "?"})`);
+        lines.push(...unifiedDiff(repoText, got[i].content, `github ${prefix}${rel} @ ${short(want.sha)}`, `${hostLabel} ${hostFile(rel)}`).slice(0, 80));
+      }
+      differF.evidence = capLines(lines);
+    }
+    const extraF = findings.find((f) => f.code === "files-extra");
+    if (extraF) {
+      // Sizes and dates only: an unexplained file could hold secrets, so its contents never leave the host.
+      const ls = probeLines(await runScript(host, lsScript(t.path, extra.slice(0, 15))), "listing extra files").filter((l) => l && l !== "END");
+      extraF.evidence = capLines(["# extra files (size, date; contents not read)", ...ls]);
+    }
+  }
 
   const where = `${repo}${prefix ? "/" + prefix.slice(0, -1) : ""} @ ${label}`;
   const counted = [differ.length && `${differ.length} differ`, !truncated && missing.length && `${missing.length} missing`, !truncated && extra.length && `${extra.length} only here`].filter(Boolean);

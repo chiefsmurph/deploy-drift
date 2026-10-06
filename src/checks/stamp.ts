@@ -25,10 +25,10 @@ export async function checkStamp(ctx: Context, t: StampTarget): Promise<Outcome>
   const repo = slug(ctx, t.repo);
   const [r, want] = await Promise.all([runScript(hostOf(ctx, t.host), catScript(t.path)), ctx.gh.resolve(repo, t.ref)]);
   const cat = parseCat(probeLines(r, `reading ${t.path}`));
-  if (cat.missing) return { summary: `${t.path} does not exist`, findings: [{ severity: "drift", message: `stamp ${t.path} does not exist` }] };
+  if (cat.missing) return { summary: `${t.path} does not exist`, findings: [{ severity: "drift", code: "missing-path", message: `stamp ${t.path} does not exist` }] };
   const sha = readStamp(cat.content, t);
   if (!sha || !/^[0-9a-f]{7,40}$/i.test(sha)) {
-    return { summary: `no commit SHA found in ${t.path}`, findings: [{ severity: "drift", message: `no commit SHA found in ${t.path}` }] };
+    return { summary: `no commit SHA found in ${t.path}`, findings: [{ severity: "drift", code: "stamp-unreadable", message: `no commit SHA found in ${t.path}` }] };
   }
   const rel = await relationFinding(ctx.gh, repo, want, sha.toLowerCase());
   const fix =
@@ -36,6 +36,6 @@ export async function checkStamp(ctx: Context, t: StampTarget): Promise<Outcome>
       ? [`The build came from a commit GitHub has never seen (a local build?). Push that commit, or redeploy ${repo} @ ${want.ref} from CI.`]
       : [`Redeploy ${repo} @ ${want.ref} (re-run its deploy).`];
   return rel
-    ? { summary: `deployed ${short(sha)} — ${rel.message}`, findings: [{ severity: rel.severity, message: rel.message, fix }] }
+    ? { summary: `deployed ${short(sha)} — ${rel.message}`, findings: [{ severity: rel.severity, code: rel.kind === "missing" ? "not-on-github" : rel.kind, message: rel.message, fix }] }
     : { summary: `deployed ${short(sha)} = ${want.ref} on GitHub`, findings: [] };
 }

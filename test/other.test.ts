@@ -148,3 +148,14 @@ test("findConfig: ./git-drift.config.json, then $GIT_DRIFT_CONFIG, then ~/.confi
   assert.equal(findConfig(local, { GIT_DRIFT_CONFIG: envFile }, home), join(local, "git-drift.config.json"));
   assert.equal(findConfig(cwd, {}, tempDir()), null);
 });
+
+test("--only can select a repo that discover finds", async () => {
+  const root = tempDir();
+  for (const n of ["alpha", "beta"]) {
+    const r = (await import("./helpers.js")).tempRepo();
+    (await import("./helpers.js")).git(root, "clone", "-q", r.dir, n);
+  }
+  const ctx = ctxWith(new FakeGithub({}), [], { discover: [{ host: "local", roots: [root], maxDepth: 2, check: true }] });
+  const results = await runAll(buildTasks(ctx, ["beta"]), 4, ["beta"]);
+  assert.deepEqual(results.map((r) => r.name.split("/").pop()), ["beta"]);
+});

@@ -1,11 +1,24 @@
 import type { DiscoverConfig } from "../config.js";
 import { runScript } from "../exec.js";
+import { capLines } from "../evidence.js";
+import { qpath } from "../exec.js";
 import { discoverScript, githubSlug, parseDiscover, probeLines, type FoundRepo } from "../remote.js";
 import type { Finding } from "../types.js";
 import { capped, hostOf, type Context } from "./context.js";
 import { checkGit, type Outcome } from "./git.js";
 
 const norm = (p: string) => p.replace(/\/+$/, "");
+
+/** What a repo with no remote holds: commits, size, last change. */
+function noRemoteEvidenceScript(dir: string): string {
+  return `cd ${qpath(dir)} 2>/dev/null || { echo "ERR missing"; exit 0; }
+echo "commits: $(git rev-list --all --count 2>/dev/null || echo 0)"
+git log -5 --format='%h %ci %an: %s' 2>/dev/null
+echo "tracked files: $(git ls-files 2>/dev/null | wc -l | tr -d ' ')  uncommitted: $(GIT_OPTIONAL_LOCKS=0 git status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
+echo "newest files:"; find . -path ./node_modules -prune -o -path ./.git -prune -o -type f -print 2>/dev/null | head -400 | xargs ls -ldt 2>/dev/null | head -5
+echo END
+`;
+}
 
 export interface SpawnedCheck {
   name: string;
@@ -21,12 +34,19 @@ export interface DiscoverOutcome extends Outcome {
 
 /** A repo found by discover: no remote = exists only here; a GitHub remote = full git check. */
 export async function checkFoundRepo(ctx: Context, host: string, repo: FoundRepo, onlyUnpushed = false): Promise<Outcome> {
+  if (repo.remote === "none" && ctx.evidence) {
+    const out = await checkFoundRepo({ ...ctx, evidence: false }, host, repo, onlyUnpushed);
+    const r = await runScript(hostOf(ctx, host), noRemoteEvidenceScript(repo.dir));
+    out.findings[0].evidence = capLines(probeLines(r, "describing repo").filter((l) => l && l !== "END"));
+    return out;
+  }
   if (repo.remote === "none") {
     const name = repo.dir.split("/").pop() ?? "repo";
     return {
       summary: "no git remote: nothing in this repo is on GitHub",
       findings: [{
         severity: "drift",
+        code: "no-remote",
         message: "no git remote: this repo exists only here",
         fix: [
           "Back it up as a private GitHub repo (commit anything uncommitted first):",
@@ -73,6 +93,7 @@ export async function checkDiscover(ctx: Context, d: DiscoverConfig): Promise<Di
   if (unknown.length) {
     findings.unshift({
       severity: "drift",
+      code: "unlisted-checkouts",
       message: `${unknown.length} git checkout${unknown.length === 1 ? " is" : "s are"} not covered by any target`,
       items: capped(unknown.map((x) => pretty(x.dir)), 30),
       fix: [

@@ -2,7 +2,8 @@ import { short } from "../blob.js";
 import type { GitTarget } from "../config.js";
 import { GithubError } from "../github.js";
 import { runScript } from "../exec.js";
-import { gitStateScript, parseGitState, probeLines } from "../remote.js";
+import { capLines } from "../evidence.js";
+import { gitEvidenceScript, gitStateScript, parseGitState, probeLines, sections } from "../remote.js";
 import type { Finding } from "../types.js";
 import { capped, hostOf, isLocal, onHost, slug, type Context } from "./context.js";
 import { relationFinding } from "./relation.js";
@@ -28,15 +29,15 @@ export async function checkGit(ctx: Context, t: GitTarget): Promise<Outcome> {
   ]);
   const s = parseGitState(probeLines(r, `inspecting ${t.path}`));
   if (s.error === "missing") {
-    return { summary: `${t.path} does not exist`, findings: [{ severity: "drift", message: `${t.path} does not exist`, fix: ["Deploy it again, or remove this target from the config if it was retired."] }] };
+    return { summary: `${t.path} does not exist`, findings: [{ severity: "drift", code: "missing-path", message: `${t.path} does not exist`, fix: ["Deploy it again, or remove this target from the config if it was retired."] }] };
   }
   if (s.error === "notgit") {
-    return { summary: `${t.path} is not a git checkout`, findings: [{ severity: "drift", message: `${t.path} is not a git checkout`, fix: ['If it is deployed by copying files, make it a "files" target instead of "git".'] }] };
+    return { summary: `${t.path} is not a git checkout`, findings: [{ severity: "drift", code: "not-git", message: `${t.path} is not a git checkout`, fix: ['If it is deployed by copying files, make it a "files" target instead of "git".'] }] };
   }
   if (s.error === "nogit") throw new Error(`git is not installed on the host`);
   if (s.error === "ownership") throw new Error(`git refuses ${t.path} ("dubious ownership"): connect as the user that owns the checkout`);
   if (s.error) throw new Error(`git status failed in ${t.path}`);
-  if (!s.head) return { summary: `no commit checked out in ${t.path}`, findings: [{ severity: "drift", message: `no commit checked out (empty repo or unborn branch)` }] };
+  if (!s.head) return { summary: `no commit checked out in ${t.path}`, findings: [{ severity: "drift", code: "no-commit", message: `no commit checked out (empty repo or unborn branch)` }] };
 
   const local = isLocal(ctx, t.host);
   const dest = hostOf(ctx, t.host).ssh ?? "";
@@ -65,11 +66,12 @@ export async function checkGit(ctx: Context, t: GitTarget): Promise<Outcome> {
               here(`git checkout ${want.ref} && git pull --ff-only`),
               "If that refuses, the checkout has commits of its own: push them first.",
             ];
-    findings.push({ severity: rel.missing ? "drift" : soft, message: rel.message, fix });
+    findings.push({ severity: rel.missing ? "drift" : soft, code: rel.kind === "missing" ? "not-on-github" : rel.kind, message: rel.message, fix });
   }
   if (want.kind === "branch" && s.branch !== want.ref && !(t.allowDetached && !s.branch)) {
     findings.push({
       severity: soft,
+      code: "wrong-branch",
       message: s.branch ? `checked out on branch ${s.branch}, expected ${want.ref}` : `detached HEAD, expected branch ${want.ref}`,
       fix: [`Switch back to ${want.ref}:`, here(`git checkout ${want.ref} && git pull --ff-only`)],
     });
@@ -77,6 +79,7 @@ export async function checkGit(ctx: Context, t: GitTarget): Promise<Outcome> {
   if (s.dirtyCount > 0) {
     findings.push({
       severity: "drift",
+      code: "uncommitted",
       message: `${s.dirtyCount} uncommitted change${s.dirtyCount === 1 ? "" : "s"}`,
       items: capped(s.dirty),
       fix: local
@@ -99,6 +102,7 @@ export async function checkGit(ctx: Context, t: GitTarget): Promise<Outcome> {
   if (s.stashes > 0) {
     findings.push({
       severity: "drift",
+      code: "stash",
       message: `${s.stashes} stash${s.stashes === 1 ? "" : "es"} (hidden uncommitted work)`,
       fix: ["See what's in them:", here("git stash list && git stash show -p"), "Keep one: `git stash pop`, then commit and push. Not needed: `git stash drop`."],
     });
@@ -108,6 +112,7 @@ export async function checkGit(ctx: Context, t: GitTarget): Promise<Outcome> {
     const wt = dirtyTrees[0].path;
     findings.push({
       severity: "drift",
+      code: "worktree-uncommitted",
       message: `uncommitted changes in ${dirtyTrees.length} other worktree${dirtyTrees.length === 1 ? "" : "s"}`,
       items: capped(dirtyTrees.map((w) => `${w.path} (${w.dirty})`)),
       fix: [
@@ -119,7 +124,7 @@ export async function checkGit(ctx: Context, t: GitTarget): Promise<Outcome> {
     });
   }
   if (s.worktrees.length) {
-    findings.push({ severity: "info", message: `${s.worktrees.length} extra worktree${s.worktrees.length === 1 ? "" : "s"}`, items: capped(s.worktrees.map((w) => (w.dirty === "missing" ? `${w.path} (directory gone: git worktree prune)` : w.path))) });
+    findings.push({ severity: "info", code: "worktrees", message: `${s.worktrees.length} extra worktree${s.worktrees.length === 1 ? "" : "s"}`, items: capped(s.worktrees.map((w) => (w.dirty === "missing" ? `${w.path} (directory gone: git worktree prune)` : w.path))) });
   }
 
   if (t.checkBranches !== false) {
@@ -135,6 +140,7 @@ export async function checkGit(ctx: Context, t: GitTarget): Promise<Outcome> {
       const first = missing[0].name;
       findings.push({
         severity: "drift",
+        code: "unpushed-branches",
         message: `${missing.length} local branch${missing.length === 1 ? " has" : "es have"} commits not on GitHub`,
         items: capped(missing.map((b) => `${b.name} (${short(b.sha)})`)),
         fix: [
@@ -142,6 +148,23 @@ export async function checkGit(ctx: Context, t: GitTarget): Promise<Outcome> {
           "Abandoned instead? Delete it: `git branch -D <name>`.",
         ],
       });
+    }
+  }
+
+  if (ctx.evidence && findings.some((f) => f.severity === "drift")) {
+    const trees = dirtyTrees.slice(0, 3).map((w) => w.path);
+    const ev = sections(probeLines(await runScript(hostOf(ctx, t.host), gitEvidenceScript(t.path, trees)), `collecting evidence in ${t.path}`));
+    const pick = (...names: string[]) => names.flatMap((n) => { const l = ev.get(n) ?? []; return l.length ? [`# ${n}`, ...l] : []; });
+    const byCode: Record<string, string[]> = {
+      uncommitted: pick("status", "diff", "untracked"),
+      stash: pick("stashes"),
+      "unpushed-branches": pick("local-only commits"),
+      "not-on-github": pick("local-only commits"),
+      "worktree-uncommitted": trees.flatMap((w) => pick(`worktree ${w}`)),
+    };
+    for (const f of findings) {
+      const lines = f.code ? byCode[f.code] : undefined;
+      if (f.severity === "drift" && lines?.length) f.evidence = capLines(lines);
     }
   }
 

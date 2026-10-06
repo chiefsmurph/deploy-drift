@@ -15,7 +15,7 @@ export async function checkCommand(ctx: Context, t: CommandTarget): Promise<Outc
   if (problems.length) {
     return {
       summary: problems.join("; "),
-      findings: [{ severity: "drift", message: problems.join("; "), items: tail, fix: ["The output above usually says why. Run it yourself to look closer:", `$ ${onHost(ctx, t.host, t.run.length > 160 ? "<the command from the config>" : t.run)}`] }],
+      findings: [{ severity: "drift", code: "command-failed", message: problems.join("; "), items: tail, fix: ["The output above usually says why. Run it yourself to look closer:", `$ ${onHost(ctx, t.host, t.run.length > 160 ? "<the command from the config>" : t.run)}`] }],
     };
   }
   return { summary: out.split("\n").filter(Boolean).pop()?.slice(0, 160) || "passed", findings: [] };

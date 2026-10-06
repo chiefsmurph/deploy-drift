@@ -5,11 +5,15 @@ export type Status = "ok" | "drift" | "error";
 
 export interface Finding {
   severity: Severity;
+  /** Stable machine-readable kind (e.g. "uncommitted", "files-differ") for scripts and AI agents. */
+  code?: string;
   message: string;
   /** Optional detail lines (file paths, git status lines, command output). */
   items?: string[];
   /** How to resolve it: plain lines, and commands prefixed with "$ ". */
   fix?: string[];
+  /** With --evidence: read-only context for deciding the fix (diffs, commit logs, dates). Secrets redacted. */
+  evidence?: string[];
 }
 
 export interface CheckResult {

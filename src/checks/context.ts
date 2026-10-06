@@ -6,6 +6,8 @@ import type { Github } from "../github.js";
 export interface Context {
   config: Config;
   gh: Github;
+  /** Gather read-only evidence (diffs, logs, dates) for each drift finding. */
+  evidence?: boolean;
 }
 
 export function hostOf(ctx: Context, name = "local"): HostConfig {

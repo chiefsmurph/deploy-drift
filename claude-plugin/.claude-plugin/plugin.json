@@ -1,0 +1,9 @@
+{
+  "name": "git-drift",
+  "description": "Find code that never made it to GitHub (on your laptop and your servers) with git-drift, then explain and fix each finding with your approval.",
+  "author": { "name": "John Murphy", "url": "https://github.com/chiefsmurph" },
+  "homepage": "https://github.com/chiefsmurph/git-drift",
+  "repository": "https://github.com/chiefsmurph/git-drift",
+  "license": "MIT",
+  "keywords": ["git", "drift", "unpushed", "uncommitted", "deploy", "ssh"]
+}

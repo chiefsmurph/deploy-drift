@@ -91,6 +91,37 @@ git-drift — 2 drifted, 31 clean
 For copied deployments `git-drift` compares content, not git metadata. It hashes every file on the server
 the way git does and checks it against the blob SHAs in GitHub's tree for the expected commit.
 
+## Let an AI fix it
+
+git-drift finds the problems deterministically; deciding *which side is right* (keep the server's hand edit?
+redeploy? push that branch?) is judgment, so hand that part to an AI, with you approving every change.
+
+**Claude Code plugin** (interactive, asks before every change):
+
+```sh
+claude plugin marketplace add chiefsmurph/git-drift
+claude plugin install git-drift@git-drift
+```
+
+Then ask Claude to "check for drift", or run `/git-drift:check`. It runs git-drift with evidence, explains each
+finding in plain language, recommends which version should win, and applies the fix only after you confirm.
+
+**Unattended, e.g. from cron** ([`examples/ai-triage.sh`](examples/ai-triage.sh)): on drift, the report and its
+evidence go to `claude -p --tools ""`, so the model can read but not run anything, and you get a written
+fix plan to act on:
+
+```sh
+git-drift -q -e -f json | claude -p --tools "" "$(cat examples/ai-triage-prompt.md)"
+```
+
+**Any other agent** can read `-f json`: every finding has a stable `code`, a `message`, the `fix` steps
+(lines starting with `$ ` are commands) and, with `-e` / `--evidence`, read-only `evidence` (diffs, unpushed
+commit logs, dates; likely secrets redacted; contents of unexplained files are never read).
+
+Codes: `uncommitted`, `stash`, `unpushed-branches`, `not-on-github`, `worktree-uncommitted`, `behind`, `ahead`,
+`diverged`, `wrong-branch`, `no-remote`, `files-differ`, `files-missing`, `files-extra`, `missing-path`,
+`not-git`, `stamp-unreadable`, `unlisted-checkouts`, `command-failed`, `check-error`.
+
 ## How it works
 
 - **Nothing to install on servers.** Each check is a short, read-only POSIX shell script piped over your
@@ -162,6 +193,7 @@ git-drift init                                       write an example config
 
   -f text|markdown|html|json   stdout format          -o report.md   also write a report (repeatable)
   -q                           hide clean checks      --only name    only matching checks / host
+  -e, --evidence               add diffs, unpushed commit logs and dates to each drift finding (for AI triage)
 ```
 
 Run it from cron, launchd or a scheduled CI job for a weekly report.

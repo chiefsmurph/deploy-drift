@@ -13,7 +13,14 @@ interface Task {
   type: string;
   host: string;
   run: () => Promise<Outcome | DiscoverOutcome>;
+  /** Run only to find repos for --only to match; its own row is left out of the report. */
+  hidden?: boolean;
 }
+
+const matcher = (only: string[]) => {
+  const want = only.map((o) => o.toLowerCase());
+  return (t: { name: string; host: string }) => !want.length || want.some((o) => t.name.toLowerCase().includes(o) || t.host.toLowerCase() === o);
+};
 
 function targetTask(ctx: Context, t: Target): Task {
   const run = () => {
@@ -37,8 +44,12 @@ export function buildTasks(ctx: Context, only: string[] = []): Task[] {
     tasks.push({ name: `github ${repo}`, type: "github", host: "github", run: () => checkGithubRepo(ctx, repo, gr?.ignoreBranches ?? []) });
   }
   if (!only.length) return tasks;
-  const want = only.map((o) => o.toLowerCase());
-  return tasks.filter((t) => want.some((o) => t.name.toLowerCase().includes(o) || t.host.toLowerCase() === o));
+  const match = matcher(only);
+  // discover-with-check entries always run (hidden unless they match) so --only can pick the repos they find.
+  return tasks
+    .map((t, i) => ({ t, check: i >= ctx.config.targets.length && t.type === "discover" && (ctx.config.discover ?? [])[i - ctx.config.targets.length]?.check }))
+    .filter(({ t, check }) => match(t) || check)
+    .map(({ t }) => (match(t) ? t : { ...t, hidden: true }));
 }
 
 async function runTask(task: Task, spawned: Task[]): Promise<CheckResult> {
@@ -51,7 +62,7 @@ async function runTask(task: Task, spawned: Task[]): Promise<CheckResult> {
   } catch (e) {
     const message = (e as Error).message || String(e);
     const fix = ["The check couldn't run, so this machine is unverified (not necessarily broken). Usually SSH access, permissions, a GitHub token, or a renamed path. Retry just this check:", `$ git-drift --only ${JSON.stringify(task.name)}`];
-    return { ...base, status: "error", summary: message, findings: [{ severity: "drift", message, fix }], ms: Date.now() - started };
+    return { ...base, status: "error", summary: message, findings: [{ severity: "drift", code: "check-error", message, fix }], ms: Date.now() - started };
   }
 }
 
@@ -72,10 +83,10 @@ async function runBatch(tasks: Task[], concurrency: number, spawned: Task[]): Pr
  * Run every task with bounded parallelism (results keep config order), then the per-repo checks that
  * `discover` with `check: true` handed back.
  */
-export async function runAll(tasks: Task[], concurrency = 6): Promise<CheckResult[]> {
+export async function runAll(tasks: Task[], concurrency = 6, only: string[] = []): Promise<CheckResult[]> {
   const spawned: Task[] = [];
-  const first = await runBatch(tasks, concurrency, spawned);
-  if (!spawned.length) return first;
-  spawned.sort((a, b) => a.name.localeCompare(b.name));
-  return [...first, ...(await runBatch(spawned, concurrency, []))];
+  const first = (await runBatch(tasks, concurrency, spawned)).filter((_, i) => !tasks[i].hidden);
+  const wanted = spawned.filter(matcher(only)).sort((a, b) => a.name.localeCompare(b.name));
+  if (!wanted.length) return first;
+  return [...first, ...(await runBatch(wanted, concurrency, []))];
 }

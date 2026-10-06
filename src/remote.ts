@@ -233,3 +233,70 @@ export function githubSlug(url: string): string | null {
   if (!m || !/github/i.test(m[1])) return null;
   return `${m[2]}/${m[3]}`;
 }
+
+// ── Evidence probes (--evidence): read-only context for deciding HOW to fix a finding ─────────────
+
+/** Sections "### <name>" … for a git checkout: status, diff, local-only commits, stashes, dirty worktrees. */
+export function gitEvidenceScript(path: string, worktrees: string[]): string {
+  const wts = worktrees
+    .map((w) => `echo "### worktree ${w.replace(/\n/g, " ")}"
+GIT_OPTIONAL_LOCKS=0 git -c core.fsmonitor=false -C ${qpath(w)} status --short 2>/dev/null | head -30
+GIT_OPTIONAL_LOCKS=0 git -c core.fsmonitor=false -C ${qpath(w)} log -1 --format='last commit: %h %ci %an: %s' 2>/dev/null`)
+    .join("\n");
+  return `${GIT_FN}
+cd ${qpath(path)} 2>/dev/null || { echo "ERR missing"; exit 0; }
+echo "### status"
+G status --short 2>/dev/null | head -60
+echo "### diff"
+G diff --stat 2>/dev/null | tail -40
+G diff 2>/dev/null | head -150
+echo "### untracked"
+G ls-files --others --exclude-standard 2>/dev/null | head -30 | while IFS= read -r f; do ls -ld -- "$f" 2>/dev/null; done
+echo "### local-only commits"
+G log --branches --not --remotes --format='%h %ci %an [%D]: %s' 2>/dev/null | head -25
+echo "### stashes"
+G stash list --format='%gd %ci: %s' 2>/dev/null | head -10
+${wts}
+echo END
+`;
+}
+
+/** Contents of several files (for diffs), each between markers, plus an `ls -ld` line. */
+export function catManyScript(dir: string, files: string[]): string {
+  const parts = files.map(
+    (f, i) => `echo "DD-FILE-BEGIN ${i}"; ls -ld -- ${q(f)} 2>/dev/null | sed 's/^/DD-LS /'; cat -- ${q(f)} 2>/dev/null; printf '\\nDD-FILE-END ${i}\\n'`,
+  );
+  return `cd ${qpath(dir)} 2>/dev/null || { echo "ERR missing"; exit 0; }\n${parts.join("\n")}\necho END\n`;
+}
+
+export function parseCatMany(lines: string[], count: number): { ls: string; content: string }[] {
+  const out: { ls: string; content: string }[] = Array.from({ length: count }, () => ({ ls: "", content: "" }));
+  let cur = -1;
+  let buf: string[] = [];
+  for (const l of lines) {
+    const begin = l.match(/^DD-FILE-BEGIN (\d+)$/);
+    const end = l.match(/^DD-FILE-END (\d+)$/);
+    if (begin) { cur = Number(begin[1]); buf = []; continue; }
+    if (end && cur >= 0) { out[cur].content = buf.join("\n").replace(/\n$/, ""); cur = -1; continue; }
+    if (cur >= 0 && l.startsWith("DD-LS ") && !buf.length && !out[cur].ls) { out[cur].ls = l.slice(6); continue; }
+    if (cur >= 0) buf.push(l);
+  }
+  return out;
+}
+
+/** `ls -ld` for files (sizes and dates only, never contents). */
+export function lsScript(dir: string, files: string[]): string {
+  return `cd ${qpath(dir)} 2>/dev/null || { echo "ERR missing"; exit 0; }\n${files.map((f) => `ls -ld -- ${q(f)} 2>/dev/null`).join("\n")}\necho END\n`;
+}
+
+/** Split "### name" sections from an evidence probe. */
+export function sections(lines: string[]): Map<string, string[]> {
+  const m = new Map<string, string[]>();
+  let cur = "";
+  for (const l of lines) {
+    if (l === "END") break;
+    if (l.startsWith("### ")) { cur = l.slice(4); m.set(cur, []); }
+    else if (cur && l !== "") m.get(cur)!.push(l);
+  }
+  return m;
+}

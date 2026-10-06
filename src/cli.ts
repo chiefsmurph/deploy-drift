@@ -23,6 +23,8 @@ Options:
   -o, --out <file>         also write a report; format from the extension (.md .html .json .txt). Repeatable.
       --only <name>        run only checks whose name contains <name>, or on host <name>. Repeatable.
   -q, --quiet              leave clean checks out of the report
+  -e, --evidence           for each drift, also collect read-only evidence (diffs, commit logs, dates;
+                           secrets redacted) into the json report, e.g. to hand to an AI agent
       --concurrency <n>    checks to run at once (default 6)
   -h, --help | -v, --version
 
@@ -35,13 +37,14 @@ interface Args {
   outs: string[];
   only: string[];
   quiet: boolean;
+  evidence: boolean;
   concurrency: number;
   init?: string;
   scan?: { roots: string[]; ssh?: string; depth?: number };
 }
 
 function parseArgs(argv: string[]): Args {
-  const a: Args = { format: "text", outs: [], only: [], quiet: false, concurrency: 6 };
+  const a: Args = { format: "text", outs: [], only: [], quiet: false, evidence: false, concurrency: 6 };
   const value = (i: number, flag: string) => {
     const v = argv[i + 1];
     if (v === undefined || v.startsWith("-")) throw new ConfigError(`${flag} needs a value`);
@@ -70,6 +73,7 @@ function parseArgs(argv: string[]): Args {
       case "-o": case "--out": a.outs.push(value(i++, arg)); break;
       case "--only": a.only.push(value(i++, arg)); break;
       case "-q": case "--quiet": a.quiet = true; break;
+      case "-e": case "--evidence": a.evidence = true; break;
       case "--concurrency": a.concurrency = Math.max(1, Number(value(i++, arg)) || 6); break;
       case "-h": case "--help": console.log(USAGE); process.exit(0);
       case "-v": case "--version": {
@@ -109,9 +113,10 @@ async function main(): Promise<number> {
   const token = findToken(config.github?.apiUrl);
   if (!token) console.error("warning: no GitHub token (set GITHUB_TOKEN or run `gh auth login`); private repos will fail");
   const gh = new GithubApi(token, config.github?.apiUrl);
-  const tasks = buildTasks({ config, gh }, args.only);
+  const tasks = buildTasks({ config, gh, evidence: args.evidence }, args.only);
   if (!tasks.length) throw new ConfigError("no checks matched");
-  const results = await runAll(tasks, args.concurrency);
+  const results = await runAll(tasks, args.concurrency, args.only);
+  if (!results.length) throw new ConfigError("no checks matched");
   const when = new Date();
   process.stdout.write(render(results, args.format, args.quiet, when));
   for (const out of args.outs) await writeFile(expandHome(out), render(results, formatFromPath(out), args.quiet, when));

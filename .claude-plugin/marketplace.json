@@ -1,0 +1,12 @@
+{
+  "name": "git-drift",
+  "description": "git-drift: find and fix code that never made it to GitHub.",
+  "owner": { "name": "John Murphy", "url": "https://github.com/chiefsmurph" },
+  "plugins": [
+    {
+      "name": "git-drift",
+      "source": "./claude-plugin",
+      "description": "Check repos and servers for drift from GitHub, explain each finding, and fix it with your approval."
+    }
+  ]
+}
