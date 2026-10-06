@@ -1,6 +1,6 @@
 {
   "name": "git-drift",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Find code that never made it to GitHub: on your servers and your laptop. Uncommitted edits, unpushed branches, stale or hand-edited deploys, checked file by file over plain SSH.",
   "author": "John Murphy (https://github.com/chiefsmurph)",
   "repository": {
@@ -25,9 +25,11 @@
     "node": ">=20"
   },
   "scripts": {
-    "build": "rm -rf dist && tsc -p . && chmod +x dist/src/cli.js",
-    "typecheck": "tsc -p . --noEmit",
+    "gen": "node scripts/gen.mjs",
+    "build": "npm run gen && rm -rf dist && tsc -p . && chmod +x dist/src/cli.js",
+    "typecheck": "npm run gen && tsc -p . --noEmit",
     "test": "npm run build && node --test dist/test/*.test.js",
+    "compile": "npm run gen && node scripts/compile.mjs",
     "prepublishOnly": "npm test"
   },
   "keywords": [

@@ -43,6 +43,17 @@ Work goes missing in two places:
 
 `git-drift` checks every repo and deployment against GitHub and reports what doesn't match.
 
+## Install
+
+```sh
+brew install chiefsmurph/tap/git-drift                                                 # macOS / Linux, Homebrew
+curl -fsSL https://raw.githubusercontent.com/chiefsmurph/git-drift/main/install.sh | sh   # standalone, no Node.js
+npm install -g git-drift                                                               # or just: npx git-drift
+```
+
+The Homebrew and curl installs are a single self-contained executable (no Node.js needed); the script verifies
+its checksum and puts it in `~/.local/bin`. Release files: macOS and Linux, arm64 and x64.
+
 ## Quick start: your laptop
 
 ```sh
@@ -131,7 +142,7 @@ Codes: `uncommitted`, `stash`, `unpushed-branches`, `not-on-github`, `worktree-u
 - **Actionable.** Each finding includes how to fix it: what to look at first, then the command for each way to resolve it.
   `-f json` carries the same steps (`findings[].fix`) for scripts and AI agents.
 
-Needs Node 20+ (macOS or Linux). GitHub auth comes from `GITHUB_TOKEN` / `GH_TOKEN`, or the token from
+Runs on macOS and Linux: the standalone binary needs nothing else, the npm package needs Node 20+. GitHub auth comes from `GITHUB_TOKEN` / `GH_TOKEN`, or the token from
 `gh auth login`. Private repos need a token with read access.
 
 ## Config

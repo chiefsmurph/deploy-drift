@@ -1,11 +1,12 @@
 #!/usr/bin/env node
-import { copyFile, writeFile } from "node:fs/promises";
-import { existsSync, readFileSync } from "node:fs";
+import { writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { ConfigError, expandHome, findConfig, loadConfig } from "./config.js";
 import { findToken, GithubApi } from "./github.js";
 import { counts, formatFromPath, render, type Format } from "./report.js";
 import { buildTasks, runAll } from "./run.js";
 import { scanConfig } from "./scan.js";
+import { EXAMPLE_CONFIG, VERSION } from "./generated.js";
 
 const USAGE = `git-drift — find code that never made it to GitHub, on your servers and your laptop
 
@@ -77,8 +78,7 @@ function parseArgs(argv: string[]): Args {
       case "--concurrency": a.concurrency = Math.max(1, Number(value(i++, arg)) || 6); break;
       case "-h": case "--help": console.log(USAGE); process.exit(0);
       case "-v": case "--version": {
-        const pkg = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8"));
-        console.log(pkg.version);
+        console.log(VERSION);
         process.exit(0);
       }
       default:
@@ -92,7 +92,7 @@ function parseArgs(argv: string[]): Args {
 async function init(path: string): Promise<void> {
   const target = expandHome(path);
   if (existsSync(target)) throw new ConfigError(`${path} already exists — not overwriting`);
-  await copyFile(new URL("../../examples/git-drift.config.example.json", import.meta.url), target);
+  await writeFile(target, EXAMPLE_CONFIG);
   console.log(`wrote ${path} — edit hosts and targets, then run: git-drift -c ${path}`);
 }
 
