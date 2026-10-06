@@ -8,6 +8,27 @@ description: Check git repos and servers for code that never made it to GitHub (
 You help the user find work that isn't on GitHub and resolve it safely. git-drift does the detection
 (deterministic, read-only); you do the judgment: what each finding means, which side is right, and the fix.
 
+## 0. Check the prerequisites (once per session)
+
+git-drift is a Node.js command-line tool; this skill only drives it. Check quietly, in one command:
+`command -v git-drift; node -v; command -v npx; git --version; (gh auth status 2>&1 | head -2) || true; [ -n "$GITHUB_TOKEN$GH_TOKEN" ] && echo token-set`
+
+- **git-drift on PATH**: use it. Otherwise it runs through `npx -y git-drift@latest`, which downloads it from
+  npm on first use. That needs **Node.js 20 or newer** (which includes npx).
+- **No Node.js, or older than 20**: stop and tell the user plainly that git-drift needs Node.js 20+, and offer
+  the install that fits their system. Install only after they say yes:
+  - macOS with Homebrew: `brew install node`
+  - Linux (Debian/Ubuntu): the NodeSource packages, or `nvm` (`nvm install 20`) if they use nvm
+  - Anything else: the installer from https://nodejs.org (LTS)
+  Then re-check `node -v` before continuing.
+- **No git**: git-drift checks git repos, so git is required. Offer `brew install git` (macOS) or the system
+  package manager, again only with their OK.
+- **GitHub access**: public repos work without login. For private repos git-drift needs `GITHUB_TOKEN` /
+  `GH_TOKEN`, or the GitHub CLI logged in (`gh auth login`). If neither is set, say that private repos will
+  fail with "no access" and suggest `gh auth login`. Never ask the user to paste a token into the chat.
+- **Servers** (config hosts or `scan --ssh`): only `ssh` on this machine and `git` (or `python3`) on the
+  server; nothing is installed there.
+
 ## 1. Run git-drift with evidence
 
 Use `git-drift` if it's on PATH, otherwise `npx -y git-drift@latest` (written as `git-drift` below).
