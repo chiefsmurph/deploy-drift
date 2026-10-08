@@ -232,8 +232,9 @@ shows where reports go and how many emails you've used this month.
 Mail goes through [PingPigeon](https://pingpigeon.app), a small email/push service made by git-drift's author.
 Free accounts get 200 emails a month, sent only to your own verified address. The email carries the text and
 HTML report: repo paths, host names, file names, fix commands and the last lines of output from any failed
-`command` check; never file contents or diffs (`--evidence` stays in the json report). The sign-in is saved to `~/.pingpigeon/config.json` (mode 600) and shared with PingPigeon's
-own tools. In CI, set `PINGPIGEON_TOKEN` instead. Don't want a service? Run with `-o report.html` and send it
+`command` check; never file contents or diffs (`--evidence` stays in the json report). The sign-in is saved to `~/.pingpigeon/config.json` (mode 600) and shared with the
+[pingpigeon CLI](https://github.com/chiefsmurph/pingpigeon-cli) (`brew install chiefsmurph/tap/pingpigeon`), which emails,
+pushes and texts you anything else from the terminal. In CI, set `PINGPIGEON_TOKEN` instead. Don't want a service? Run with `-o report.html` and send it
 with whatever you already use.
 
 ## Safety
