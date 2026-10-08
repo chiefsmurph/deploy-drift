@@ -122,7 +122,8 @@ export async function setupPigeon(io: SetupIO, opts: { email?: string; token?: s
   const url = opts.url || PIGEON_URL;
   io.say("PingPigeon (pingpigeon.app) emails you your git-drift reports. It's a free service made by git-drift's author:");
   io.say("free accounts get 200 emails a month, sent only to your own verified address. Reports contain repo paths,");
-  io.say("host names and file names, never file contents.");
+  io.say("host names, file names, fix commands and the last lines of output from any failed `command` check;");
+  io.say("never file contents or diffs.");
   io.say("");
 
   if (opts.token) {
