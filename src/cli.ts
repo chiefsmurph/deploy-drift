@@ -3,6 +3,7 @@ import { writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { ConfigError, expandHome, findConfig, loadConfig } from "./config.js";
 import { findToken, GithubApi } from "./github.js";
+import { applyHistory, defaultStatePath, loadHistory, saveHistory } from "./history.js";
 import { counts, formatFromPath, render, type Format } from "./report.js";
 import { buildTasks, runAll } from "./run.js";
 import { scanConfig } from "./scan.js";
@@ -27,6 +28,9 @@ Options:
   -e, --evidence           for each drift, also collect read-only evidence (diffs, commit logs, dates;
                            secrets redacted) into the json report, e.g. to hand to an AI agent
       --concurrency <n>    checks to run at once (default 6)
+      --state <file>       where to remember when each problem was first seen, so reports mark it
+                           "new" or "since Oct 5 · day 3" (default ~/.local/state/git-drift/seen.json)
+      --no-state           don't read or write that file
   -h, --help | -v, --version
 
 GitHub auth: GITHUB_TOKEN or GH_TOKEN, else the token from \`gh auth login\`.
@@ -40,6 +44,8 @@ interface Args {
   quiet: boolean;
   evidence: boolean;
   concurrency: number;
+  /** null = --no-state */
+  state?: string | null;
   init?: string;
   scan?: { roots: string[]; ssh?: string; depth?: number };
 }
@@ -75,6 +81,8 @@ function parseArgs(argv: string[]): Args {
       case "--only": a.only.push(value(i++, arg)); break;
       case "-q": case "--quiet": a.quiet = true; break;
       case "-e": case "--evidence": a.evidence = true; break;
+      case "--state": a.state = value(i++, arg); break;
+      case "--no-state": a.state = null; break;
       case "--concurrency": a.concurrency = Math.max(1, Number(value(i++, arg)) || 6); break;
       case "-h": case "--help": console.log(USAGE); process.exit(0);
       case "-v": case "--version": {
@@ -118,6 +126,11 @@ async function main(): Promise<number> {
   const results = await runAll(tasks, args.concurrency, args.only);
   if (!results.length) throw new ConfigError("no checks matched");
   const when = new Date();
+  const statePath = args.state === null ? null : expandHome(args.state ?? defaultStatePath());
+  if (statePath) {
+    const history = applyHistory(results, await loadHistory(statePath), when);
+    await saveHistory(statePath, history).catch((e) => console.error(`warning: could not save ${statePath}: ${(e as Error).message}`));
+  }
   process.stdout.write(render(results, args.format, args.quiet, when));
   for (const out of args.outs) await writeFile(expandHome(out), render(results, formatFromPath(out), args.quiet, when));
   const c = counts(results);

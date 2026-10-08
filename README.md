@@ -187,7 +187,9 @@ Runs on macOS and Linux: the standalone binary needs nothing else, the npm packa
   drift: new or forgotten deployments. `ignore` lists paths to skip.
 - **`onlyUnpushed`** (on `git` targets and `discover`): only work missing from GitHub counts as drift; being
   behind, unmerged, or on another branch is a note. Use it for laptops; leave it off for deployments, where
-  "3 commits behind" is exactly what you want to know.
+  "3 commits behind" is exactly what you want to know. Repos that `discover` finds on this machine get it by
+  default (a pushed feature branch on your laptop is fine); repos it finds on an SSH host don't. Set it
+  explicitly to override either way.
 - **`githubRepos`**: open pull requests and branches not merged into the default branch. These are notes and never fail the run.
 
 Also: `ref` (a branch, tag or SHA; default = the repo's default branch) on `git`/`files`/`stamp`;
@@ -205,9 +207,14 @@ git-drift init                                       write an example config
   -f text|markdown|html|json   stdout format          -o report.md   also write a report (repeatable)
   -q                           hide clean checks      --only name    only matching checks / host
   -e, --evidence               add diffs, unpushed commit logs and dates to each drift finding (for AI triage)
+  --state file / --no-state    where it remembers when each problem was first seen
 ```
 
-Run it from cron, launchd or a scheduled CI job for a weekly report.
+Run it from cron, launchd or a scheduled CI job for a daily report. Each run remembers when it first saw each
+problem (in `~/.local/state/git-drift/seen.json`, or `$XDG_STATE_HOME`), so the report lists new problems
+first and marks the rest `since Oct 5 · day 3`; the headline says how many are new. A problem that gets fixed is
+forgotten, so if it comes back it's new again. The json report carries `firstSeen` on each finding and
+`summary.new`.
 
 ## Safety
 

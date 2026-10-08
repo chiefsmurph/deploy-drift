@@ -4,7 +4,7 @@ import { capLines } from "../evidence.js";
 import { qpath } from "../exec.js";
 import { discoverScript, githubSlug, parseDiscover, probeLines, type FoundRepo } from "../remote.js";
 import type { Finding } from "../types.js";
-import { capped, hostOf, type Context } from "./context.js";
+import { capped, hostOf, isLocal, type Context } from "./context.js";
 import { checkGit, type Outcome } from "./git.js";
 
 const norm = (p: string) => p.replace(/\/+$/, "");
@@ -84,10 +84,13 @@ export async function checkDiscover(ctx: Context, d: DiscoverConfig): Promise<Di
   if (noRoot.length) findings.push({ severity: "info", message: `root${noRoot.length === 1 ? "" : "s"} not found: ${noRoot.join(", ")}` });
 
   if (d.check) {
+    // Repos found on this machine are working copies: only work missing from GitHub is a problem. On a
+    // server they are deployments, so being behind or on another branch counts too.
+    const laptop = d.onlyUnpushed ?? isLocal(ctx, d.host);
     return {
       summary: `${repos.length} checkout${repos.length === 1 ? "" : "s"} found; ${unknown.length} checked individually${linked.length ? ` (+${linked.length} linked worktree${linked.length === 1 ? "" : "s"}, covered by their repo)` : ""}`,
       findings,
-      spawn: unknown.map((x) => ({ name: pretty(x.dir), type: "git", host: d.host, run: () => checkFoundRepo(ctx, d.host, x, d.onlyUnpushed) })),
+      spawn: unknown.map((x) => ({ name: pretty(x.dir), type: "git", host: d.host, run: () => checkFoundRepo(ctx, d.host, x, laptop) })),
     };
   }
   if (unknown.length) {

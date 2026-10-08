@@ -13,4 +13,6 @@ Rules:
 - Never suggest force-push, `git reset --hard`, `rm -rf`, or overwriting a server file without first saving it.
 - Servers may be production: a deliberate-looking hand edit on a server should usually be copied into git.
 - "error" results mean a machine couldn't be checked: list them, don't guess their state.
+- `firstSeen` (when present) is when the problem first appeared. Lead with new ones; for one that has sat for
+  days, say how long, and treat it as possibly deliberate in-flight work before recommending a change.
 - Be concise: under 400 words in total. End with a one-line summary of what to do first.

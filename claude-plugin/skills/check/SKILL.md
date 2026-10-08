@@ -43,7 +43,9 @@ Pick the scope:
 
 The JSON has `summary` and `results[]`. Each result has `name`, `host`, `status` (ok | drift | error) and
 `findings[]`. Each finding has `severity` (drift | info), `code`, `message`, `items`, `fix` (steps; lines that
-start with `$ ` are commands) and, with `-e`, `evidence` (diffs, commit logs, dates; secrets redacted).
+start with `$ ` are commands), with `-e`, `evidence` (diffs, commit logs, dates; secrets redacted), and
+`firstSeen` (when git-drift first reported it; `summary.new` counts results new in this run). Lead with new
+problems; one that has sat for days is either forgotten or deliberate in-flight work, so ask before acting on it.
 Exit code 0 = clean, 1 = drift, 2 = a check couldn't run.
 
 If everything is clean, say so in one line and stop.

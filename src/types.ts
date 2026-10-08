@@ -14,6 +14,8 @@ export interface Finding {
   fix?: string[];
   /** With --evidence: read-only context for deciding the fix (diffs, commit logs, dates). Secrets redacted. */
   evidence?: string[];
+  /** When this problem was first seen (ISO), from the state file. Equal to the run's time = new. */
+  firstSeen?: string;
 }
 
 export interface CheckResult {
