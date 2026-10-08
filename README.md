@@ -203,11 +203,13 @@ path) or `pattern` (a regex whose first group is the SHA) on `stamp`; `expect`, 
 git-drift scan [dir...] [--ssh host] [--depth n]     every repo under the dirs
 git-drift [-c config.json]                           everything in a config file
 git-drift init                                       write an example config
+git-drift notify pingpigeon                          get the report by email (see below)
 
   -f text|markdown|html|json   stdout format          -o report.md   also write a report (repeatable)
   -q                           hide clean checks      --only name    only matching checks / host
   -e, --evidence               add diffs, unpushed commit logs and dates to each drift finding (for AI triage)
   --state file / --no-state    where it remembers when each problem was first seen
+  --notify / --notify-always   email the report when something drifted / after every run
 ```
 
 Run it from cron, launchd or a scheduled CI job for a daily report. Each run remembers when it first saw each
@@ -216,13 +218,32 @@ first and marks the rest `since Oct 5 · day 3`; the headline says how many are 
 forgotten, so if it comes back it's new again. The json report carries `firstSeen` on each finding and
 `summary.new`.
 
+## Get the report by email
+
+```sh
+git-drift notify pingpigeon      # asks for your email, sends a 6-digit code, you type it in: done
+git-drift notify test            # check it arrives
+git-drift --notify               # in your scheduled run: emails the report when something drifted or failed
+```
+
+`--notify-always` emails every run, clean ones too (a weekly "still running" heartbeat). `git-drift notify`
+shows where reports go and how many emails you've used this month.
+
+Mail goes through [PingPigeon](https://pingpigeon.app), a small email/push service made by git-drift's author.
+Free accounts get 200 emails a month, sent only to your own verified address. The email carries the text and
+HTML report: repo paths, host names, file names and fix commands, never file contents (`--evidence` diffs stay in
+the json report). The sign-in is saved to `~/.pingpigeon/config.json` (mode 600) and shared with PingPigeon's
+own tools. In CI, set `PINGPIGEON_TOKEN` instead. Don't want a service? Run with `-o report.html` and send it
+with whatever you already use.
+
 ## Safety
 
 Every probe only reads. They run `git rev-parse` / `status` / `stash list` / `worktree list` /
 `for-each-ref` / `config --get`, `find`, `git hash-object` (or python3 `hashlib`) and `cat` on stamp files,
 with `GIT_OPTIONAL_LOCKS=0` and `core.fsmonitor=false` so git neither rewrites the index nor runs a repo's
 monitor hook. They create one temp directory and remove it. `command` checks run whatever you write. Everything
-runs with your SSH user's permissions.
+runs with your SSH user's permissions. Nothing leaves your machine except GitHub API reads, and, only with
+`--notify`, the report email.
 
 ## License
 

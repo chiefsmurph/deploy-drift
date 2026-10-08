@@ -82,3 +82,10 @@ Errors (`status: error`) mean that machine couldn't be checked: report them sepa
 
 Re-run git-drift for what you fixed (`--only <name>`) and report the result in a line or two:
 what's fixed, what's left, and anything the user still needs to decide.
+
+## 5. Keep it checked (only if the user asks)
+
+To get the report on a schedule, run `git-drift --notify` from cron, launchd or CI: it emails the report when
+something drifted. Email setup verifies the address with a code, so the user runs it in their own terminal:
+`git-drift notify pingpigeon`. Say plainly that PingPigeon is a free service made by git-drift's author; offer
+`-o report.html` with their own mailer as the alternative.
